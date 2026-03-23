@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --use-npm)",
+      "Bash(cp -r \"D:/posterchef/.claude\" /tmp/posterchef-backup/)",
+      "Bash(rm -rf \"D:/posterchef/.claude\")",
+      "Bash(npm install:*)",
+      "Bash(node -e \":*)",
+      "Bash(npx shadcn@latest init -d -y)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(npx shadcn@latest add badge progress skeleton input textarea -y)"
+    ]
+  }
+}
