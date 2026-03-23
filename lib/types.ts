@@ -104,9 +104,14 @@ export interface PosterState {
   dishInfo: DishInfo | null;
   isRecognizing: boolean;
 
-  // Step 3: 抠图结果
-  removedBgImage: string | null;      // 透明背景 PNG（base64）
-  isRemovingBg: boolean;
+  // Step 3: 抠图 + 增强
+  removedBgImage: string | null;      // 透明背景 PNG（data URL）
+  enhancedImage: string | null;       // 增强后的原图（data URL）
+  processedImage: string | null;      // 用户最终选择的图片（传入海报合成）
+  isProcessing: boolean;              // 抠图/增强进行中
+  removeBgProgress: number;           // 抠图进度 0-100
+  enhanceProgress: number;            // 增强进度 0-100
+  useRemovedBg: boolean;              // true=用抠图, false=用原图
 
   // Step 4: 风格 & 背景
   selectedStyle: StyleId | null;

@@ -17,8 +17,14 @@ interface PosterStore extends PosterState {
   setDishInfo: (info: DishInfo) => void;
   setIsRecognizing: (v: boolean) => void;
 
+  // Phase 3
   setRemovedBgImage: (image: string) => void;
-  setIsRemovingBg: (v: boolean) => void;
+  setEnhancedImage: (image: string) => void;
+  setProcessedImage: (image: string) => void;
+  setIsProcessing: (v: boolean) => void;
+  setRemoveBgProgress: (v: number) => void;
+  setEnhanceProgress: (v: number | ((prev: number) => number)) => void;
+  setUseRemovedBg: (v: boolean) => void;
 
   setSelectedStyle: (style: StyleId) => void;
   setGeneratedBackgrounds: (bgs: BackgroundOption[]) => void;
@@ -43,7 +49,12 @@ const initialState: Omit<PosterState, 'originalImageFile'> & { originalImageFile
   dishInfo: null,
   isRecognizing: false,
   removedBgImage: null,
-  isRemovingBg: false,
+  enhancedImage: null,
+  processedImage: null,
+  isProcessing: false,
+  removeBgProgress: 0,
+  enhanceProgress: 0,
+  useRemovedBg: true,
   selectedStyle: null,
   generatedBackgrounds: [],
   selectedBackground: null,
@@ -74,7 +85,13 @@ export const usePosterStore = create<PosterStore>()(
       setIsRecognizing: (v) => set({ isRecognizing: v }),
 
       setRemovedBgImage: (image) => set({ removedBgImage: image }),
-      setIsRemovingBg: (v) => set({ isRemovingBg: v }),
+      setEnhancedImage: (image) => set({ enhancedImage: image }),
+      setProcessedImage: (image) => set({ processedImage: image }),
+      setIsProcessing: (v) => set({ isProcessing: v }),
+      setRemoveBgProgress: (v) => set({ removeBgProgress: v }),
+      setEnhanceProgress: (v) =>
+        set((s) => ({ enhanceProgress: typeof v === 'function' ? v(s.enhanceProgress) : v })),
+      setUseRemovedBg: (v) => set({ useRemovedBg: v }),
 
       setSelectedStyle: (style) => set({ selectedStyle: style }),
       setGeneratedBackgrounds: (bgs) => set({ generatedBackgrounds: bgs }),
@@ -98,12 +115,14 @@ export const usePosterStore = create<PosterStore>()(
     }),
     {
       name: 'posterchef-store',
-      // 不持久化 File 对象和 loading/error 状态
       partialize: (state) => ({
         currentStep:          state.currentStep,
         originalImage:        state.originalImage,
         dishInfo:             state.dishInfo,
         removedBgImage:       state.removedBgImage,
+        enhancedImage:        state.enhancedImage,
+        processedImage:       state.processedImage,
+        useRemovedBg:         state.useRemovedBg,
         selectedStyle:        state.selectedStyle,
         generatedBackgrounds: state.generatedBackgrounds,
         selectedBackground:   state.selectedBackground,
