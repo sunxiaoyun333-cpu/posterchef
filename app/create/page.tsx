@@ -5,6 +5,7 @@ import { ChefHat } from 'lucide-react';
 import { usePosterStore } from '@/lib/store/posterStore';
 import StepUpload from '@/components/create/StepUpload';
 import StepRecognize from '@/components/create/StepRecognize';
+import StepGenerate from '@/components/create/StepGenerate';
 
 const STEP_LABELS = [
   '上传照片',
@@ -60,11 +61,7 @@ export default function CreatePage() {
       <main className="flex-1 flex items-start justify-center px-6 py-10">
         {currentStep === 1 && <StepUpload />}
         {currentStep === 2 && <StepRecognize />}
-        {currentStep > 2 && (
-          <div className="flex flex-col items-center gap-4 text-neutral-500">
-            <p>Step {currentStep} — 开发中，Phase {currentStep + 1} 即将上线…</p>
-          </div>
-        )}
+        {currentStep >= 3 && <StepGenerate />}
       </main>
     </div>
   );
