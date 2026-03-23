@@ -1,14 +1,15 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import {
-  ChevronLeft, Download, Layers, Sliders, Type,
+  ChevronLeft, Download, Layers,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  Image as ImageIcon, Globe,
+  Image as ImageIcon, Type, Globe,
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { Button } from '@/components/ui/button';
 import PosterCanvas, { type PosterCanvasHandle } from '@/components/editor/PosterCanvas';
+import PropertyPanel from '@/components/editor/PropertyPanel';
 import { usePosterStore } from '@/lib/store/posterStore';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, STYLE_TEMPLATES } from '@/lib/constants';
 import type { LanguageMode } from '@/lib/templates/layoutEngine';
@@ -33,7 +34,6 @@ export default function StepEditor() {
   const [rightOpen, setRightOpen] = useState(true);
   const [bgParams,  setBgParams]  = useState(DEFAULT_BG);
   const [isExporting, setIsExporting] = useState(false);
-  const [rightTab,  setRightTab]  = useState<'adjust' | 'text' | 'layers'>('adjust');
   const [langMode,  setLangMode]  = useState<LanguageMode>('bilingual');
 
   const dishUrl       = processedImage || removedBgImage || enhancedImage || null;
@@ -52,6 +52,28 @@ export default function StepEditor() {
       setIsExporting(false);
     }
   }
+
+  // 提供给 PropertyPanel 获取 canvas 实例的回调
+  const getCanvas = useCallback(
+    () => canvasRef.current?.getCanvas() ?? null,
+    [],
+  );
+
+  // 重新自动排版
+  const handleRelayout = useCallback(() => {
+    canvasRef.current?.refreshTextLayer();
+  }, []);
+
+  // 更换背景 → 回到步骤 4
+  const { setStep } = usePosterStore();
+  const handleChangeBackground = useCallback(() => {
+    setStep(4 as any);
+  }, [setStep]);
+
+  // 编辑文案 → 回到步骤 5
+  const handleEditCopy = useCallback(() => {
+    setStep(5 as any);
+  }, [setStep]);
 
   return (
     <div className="flex flex-col h-full w-full" style={{ height: 'calc(100vh - 56px)' }}>
@@ -179,6 +201,68 @@ export default function StepEditor() {
                 在上一步选择文案后，此处将显示排版预览。
               </p>
             )}
+
+            {/* 背景调节 */}
+            <div className="mt-5">
+              <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold mb-3">
+                背景调节
+              </p>
+              <div className="flex flex-col gap-4">
+                <SliderControl
+                  label="亮度" labelEn="Brightness"
+                  value={bgParams.brightness} min={-1} max={1} step={0.05}
+                  onChange={(v) => setBgParams((p) => ({ ...p, brightness: v }))}
+                  format={(v) => (v >= 0 ? `+${Math.round(v * 100)}` : `${Math.round(v * 100)}`)}
+                />
+                <SliderControl
+                  label="模糊" labelEn="Blur"
+                  value={bgParams.blur} min={0} max={20} step={1}
+                  onChange={(v) => setBgParams((p) => ({ ...p, blur: v }))}
+                  format={(v) => `${v}px`}
+                />
+                <SliderControl
+                  label="暖色调" labelEn="Warmth"
+                  value={bgParams.warmth} min={-1} max={1} step={0.05}
+                  onChange={(v) => setBgParams((p) => ({ ...p, warmth: v }))}
+                  format={(v) => (v >= 0 ? `+${Math.round(v * 100)}` : `${Math.round(v * 100)}`)}
+                />
+                <button
+                  className="text-xs text-neutral-600 hover:text-neutral-400 self-start transition-colors"
+                  onClick={() => setBgParams(DEFAULT_BG)}
+                >
+                  重置全部
+                </button>
+              </div>
+            </div>
+
+            {/* 语言模式 */}
+            <div className="mt-5">
+              <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold mb-3 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5" />语言模式
+              </p>
+              <div className="flex flex-col gap-1.5">
+                {(
+                  [
+                    { id: 'bilingual', label: '中英双语', desc: '中文 + English 双行显示' },
+                    { id: 'cn_only',   label: '纯中文',   desc: '仅显示中文内容' },
+                    { id: 'en_only',   label: '纯英文',   desc: 'English only' },
+                  ] as { id: LanguageMode; label: string; desc: string }[]
+                ).map(({ id, label, desc }) => (
+                  <button
+                    key={id}
+                    onClick={() => setLangMode(id)}
+                    className={`text-left px-3 py-2 rounded-lg border transition-colors ${
+                      langMode === id
+                        ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
+                        : 'border-neutral-700 bg-neutral-800/50 text-neutral-400 hover:border-neutral-600'
+                    }`}
+                  >
+                    <p className="text-xs font-medium">{label}</p>
+                    <p className="text-[10px] text-neutral-600 mt-0.5">{desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </aside>
 
@@ -197,114 +281,18 @@ export default function StepEditor() {
           languageMode={langMode}
         />
 
-        {/* 右侧面板 */}
+        {/* 右侧面板 — 属性面板 */}
         <aside
           className="shrink-0 flex flex-col bg-neutral-900 border-l border-neutral-800 transition-all duration-200"
           style={{ width: rightOpen ? 300 : 0, opacity: rightOpen ? 1 : 0, overflow: rightOpen ? 'auto' : 'hidden' }}
         >
           <div className="min-w-[300px]">
-            {/* Tab 栏 */}
-            <div className="flex border-b border-neutral-800">
-              {(
-                [
-                  { key: 'adjust', label: '背景调节', icon: <Sliders className="w-3.5 h-3.5" /> },
-                  { key: 'text',   label: '文字',     icon: <Type     className="w-3.5 h-3.5" /> },
-                  { key: 'layers', label: '图层',     icon: <Layers   className="w-3.5 h-3.5" /> },
-                ] as const
-              ).map(({ key, label, icon }) => (
-                <button
-                  key={key}
-                  onClick={() => setRightTab(key)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors border-b-2 ${
-                    rightTab === key
-                      ? 'border-orange-500 text-orange-400'
-                      : 'border-transparent text-neutral-500 hover:text-neutral-300'
-                  }`}
-                >
-                  {icon}{label}
-                </button>
-              ))}
-            </div>
-
-            <div className="p-4">
-              {rightTab === 'adjust' && (
-                <div className="flex flex-col gap-5">
-                  <SliderControl
-                    label="亮度" labelEn="Brightness"
-                    value={bgParams.brightness} min={-1} max={1} step={0.05}
-                    onChange={(v) => setBgParams((p) => ({ ...p, brightness: v }))}
-                    format={(v) => (v >= 0 ? `+${Math.round(v * 100)}` : `${Math.round(v * 100)}`)}
-                  />
-                  <SliderControl
-                    label="模糊" labelEn="Blur"
-                    value={bgParams.blur} min={0} max={20} step={1}
-                    onChange={(v) => setBgParams((p) => ({ ...p, blur: v }))}
-                    format={(v) => `${v}px`}
-                  />
-                  <SliderControl
-                    label="暖色调" labelEn="Warmth"
-                    value={bgParams.warmth} min={-1} max={1} step={0.05}
-                    onChange={(v) => setBgParams((p) => ({ ...p, warmth: v }))}
-                    format={(v) => (v >= 0 ? `+${Math.round(v * 100)}` : `${Math.round(v * 100)}`)}
-                  />
-                  <button
-                    className="text-xs text-neutral-600 hover:text-neutral-400 self-start transition-colors"
-                    onClick={() => setBgParams(DEFAULT_BG)}
-                  >
-                    重置全部
-                  </button>
-                </div>
-              )}
-
-              {rightTab === 'text' && (
-                <div className="flex flex-col gap-4">
-                  <div>
-                    <p className="text-xs text-neutral-400 font-medium mb-2 flex items-center gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-orange-400" />语言模式
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {(
-                        [
-                          { id: 'bilingual', label: '中英双语', desc: '中文 + English 双行显示' },
-                          { id: 'cn_only',   label: '纯中文',   desc: '仅显示中文内容' },
-                          { id: 'en_only',   label: '纯英文',   desc: 'English only' },
-                        ] as { id: LanguageMode; label: string; desc: string }[]
-                      ).map(({ id, label, desc }) => (
-                        <button
-                          key={id}
-                          onClick={() => setLangMode(id)}
-                          className={`text-left px-3 py-2 rounded-lg border transition-colors ${
-                            langMode === id
-                              ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
-                              : 'border-neutral-700 bg-neutral-800/50 text-neutral-400 hover:border-neutral-600'
-                          }`}
-                        >
-                          <p className="text-xs font-medium">{label}</p>
-                          <p className="text-[10px] text-neutral-600 mt-0.5">{desc}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-neutral-800/50 rounded-xl border border-neutral-700 p-3">
-                    <p className="text-[10px] text-neutral-500 mb-1">编辑提示</p>
-                    <ul className="text-xs text-neutral-600 space-y-1">
-                      <li>• 双击画布文字可直接编辑</li>
-                      <li>• 拖拽可移动位置</li>
-                      <li>• 拖拽角点可缩放</li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {rightTab === 'layers' && (
-                <PlaceholderPanel
-                  icon={<Layers className="w-8 h-8 text-neutral-600" />}
-                  title="图层管理"
-                  desc="图层排序、锁定、可见性控制将在后续子步骤完善。"
-                />
-              )}
-            </div>
+            <PropertyPanel
+              getCanvas={getCanvas}
+              onRelayout={handleRelayout}
+              onChangeBackground={handleChangeBackground}
+              onEditCopy={handleEditCopy}
+            />
           </div>
         </aside>
       </div>
@@ -355,18 +343,6 @@ function SliderControl({ label, labelEn, value, min, max, step, onChange, format
         <span className="text-[10px] text-neutral-700">{min}</span>
         <span className="text-[10px] text-neutral-700">{max}</span>
       </div>
-    </div>
-  );
-}
-
-function PlaceholderPanel({ icon, title, desc }: {
-  icon: React.ReactNode; title: string; desc: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
-      {icon}
-      <p className="text-sm font-medium text-neutral-400">{title}</p>
-      <p className="text-xs text-neutral-600 leading-relaxed">{desc}</p>
     </div>
   );
 }
