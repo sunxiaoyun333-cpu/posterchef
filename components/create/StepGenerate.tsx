@@ -2,15 +2,24 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Canvas, FabricImage, IText, Rect } from 'fabric';
-import { Download, ChevronLeft, Palette, Type, Bold, Italic } from 'lucide-react';
+import { Download, ChevronLeft, Palette, Type, Bold, Italic, Sparkles, RefreshCw, CheckCircle, ChevronRight } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { Button } from '@/components/ui/button';
 import { usePosterStore } from '@/lib/store/posterStore';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/lib/constants';
+import type { GeneratedCopy } from '@/app/api/generate-copy/route';
 
 // ── 海报逻辑尺寸 ─────────────────────────────────────────────────
 const POSTER_W = CANVAS_WIDTH;   // 800
 const POSTER_H = CANVAS_HEIGHT;  // 1000
+
+// 画布文字对象的 data 标记，用于一键替换时精确定位
+const TEXT_KEYS = {
+  MAIN_TITLE:   'main_title',
+  SUB_TITLE:    'sub_title',
+  DESCRIPTION:  'description',
+  PRICE:        'price',
+};
 
 // 背景颜色预设
 const BG_PRESETS = [
@@ -26,6 +35,12 @@ const TEXT_COLOR_PRESETS = [
   '#60a5fa', '#c084fc', '#fb7185', '#1a1a2e',
 ];
 
+const STYLE_BADGE: Record<string, string> = {
+  formal: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  casual: 'bg-green-500/20 text-green-300 border-green-500/30',
+  promo:  'bg-orange-500/20 text-orange-300 border-orange-500/30',
+};
+
 export default function StepGenerate() {
   const {
     processedImage,
@@ -34,20 +49,25 @@ export default function StepGenerate() {
     dishInfo,
     selectedCopy,
     prevStep,
-    nextStep,
   } = usePosterStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasElRef = useRef<HTMLCanvasElement>(null);
-  const fabricRef = useRef<Canvas | null>(null);
+  const canvasElRef  = useRef<HTMLCanvasElement>(null);
+  const fabricRef    = useRef<Canvas | null>(null);
 
-  const [bgColor, setBgColor] = useState('#1a1a2e');
-  const [canvasScale, setCanvasScale] = useState(1);
-  const [selectedTextColor, setSelectedTextColor] = useState('#ffffff');
-  const [isBold, setIsBold] = useState(false);
-  const [isItalic, setIsItalic] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isTextActive, setIsTextActive] = useState(false);
+  const [bgColor,            setBgColor]            = useState('#1a1a2e');
+  const [canvasScale,        setCanvasScale]        = useState(1);
+  const [selectedTextColor,  setSelectedTextColor]  = useState('#ffffff');
+  const [isBold,             setIsBold]             = useState(false);
+  const [isItalic,           setIsItalic]           = useState(false);
+  const [isExporting,        setIsExporting]        = useState(false);
+  const [isTextActive,       setIsTextActive]       = useState(false);
+
+  // 文案面板状态
+  const [copySets,           setCopySets]           = useState<GeneratedCopy[]>([]);
+  const [isGeneratingCopy,   setIsGeneratingCopy]   = useState(false);
+  const [copyError,          setCopyError]          = useState<string | null>(null);
+  const [appliedIndex,       setAppliedIndex]       = useState<number | null>(null);
 
   // ── 计算响应式缩放 ────────────────────────────────────────────
   const calcScale = useCallback(() => {
@@ -84,6 +104,7 @@ export default function StepGenerate() {
           top: POSTER_H * 0.32,
           originX: 'center',
           originY: 'center',
+          data: { key: 'dish_image' },
         });
         fc.add(img);
       } catch {
@@ -91,11 +112,11 @@ export default function StepGenerate() {
       }
     }
 
-    const headlineCn = selectedCopy?.headline ?? dishInfo?.name ?? '菜品名称';
-    const headlineEn = selectedCopy?.headlineEn ?? dishInfo?.nameEn ?? 'Dish Name';
-    const tagline   = selectedCopy?.tagline   ?? dishInfo?.description   ?? '';
-    const taglineEn = selectedCopy?.taglineEn ?? dishInfo?.descriptionEn ?? '';
-    const price     = selectedCopy?.price;
+    const headlineCn = selectedCopy?.headline ?? dishInfo?.name        ?? '菜品名称';
+    const headlineEn = selectedCopy?.headlineEn ?? dishInfo?.nameEn    ?? 'Dish Name';
+    const tagline    = selectedCopy?.tagline    ?? dishInfo?.description   ?? '';
+    const taglineEn  = selectedCopy?.taglineEn  ?? dishInfo?.descriptionEn ?? '';
+    const price      = selectedCopy?.price;
 
     // 分隔线
     fc.add(new Rect({
@@ -110,7 +131,7 @@ export default function StepGenerate() {
       evented: false,
     }));
 
-    // 主标题（中文，可双击编辑）
+    // 主标题（中文）
     fc.add(new IText(headlineCn, {
       left: POSTER_W / 2,
       top: POSTER_H * 0.73,
@@ -121,6 +142,7 @@ export default function StepGenerate() {
       fill: '#ffffff',
       fontFamily: 'Georgia, serif',
       textAlign: 'center',
+      data: { key: TEXT_KEYS.MAIN_TITLE },
     }));
 
     // 英文标题
@@ -134,6 +156,7 @@ export default function StepGenerate() {
       fontFamily: 'Arial, sans-serif',
       fontStyle: 'italic',
       textAlign: 'center',
+      data: { key: TEXT_KEYS.SUB_TITLE },
     }));
 
     if (tagline) {
@@ -146,6 +169,7 @@ export default function StepGenerate() {
         fill: 'rgba(255,255,255,0.6)',
         fontFamily: 'Arial, sans-serif',
         textAlign: 'center',
+        data: { key: TEXT_KEYS.DESCRIPTION },
       }));
     }
 
@@ -159,6 +183,7 @@ export default function StepGenerate() {
         fill: 'rgba(255,255,255,0.45)',
         fontFamily: 'Arial, sans-serif',
         textAlign: 'center',
+        data: { key: 'description_en' },
       }));
     }
 
@@ -173,6 +198,7 @@ export default function StepGenerate() {
         fill: '#e67e22',
         rx: 21,
         ry: 21,
+        data: { key: 'price_bg' },
       }));
       fc.add(new IText(price, {
         left: POSTER_W / 2,
@@ -184,6 +210,7 @@ export default function StepGenerate() {
         fill: '#ffffff',
         fontFamily: 'Arial, sans-serif',
         textAlign: 'center',
+        data: { key: TEXT_KEYS.PRICE },
       }));
     }
 
@@ -283,6 +310,64 @@ export default function StepGenerate() {
     }
   }
 
+  // ── 将某套文案一键替换到画布 ─────────────────────────────────
+  function applyCopyToCanvas(copy: GeneratedCopy, index: number) {
+    const fc = fabricRef.current;
+    if (!fc) return;
+
+    const objects = fc.getObjects();
+    for (const obj of objects) {
+      if (!(obj instanceof IText)) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const key = ((obj as any).data as { key?: string } | undefined)?.key;
+      if (!key) continue;
+
+      switch (key) {
+        case TEXT_KEYS.MAIN_TITLE:
+          obj.set('text', copy.main_title || copy.main_title_en);
+          break;
+        case TEXT_KEYS.SUB_TITLE:
+          obj.set('text', copy.sub_title_en || copy.sub_title);
+          break;
+        case TEXT_KEYS.DESCRIPTION:
+          obj.set('text', copy.description);
+          break;
+        case 'description_en':
+          obj.set('text', copy.description_en);
+          break;
+        case TEXT_KEYS.PRICE:
+          obj.set('text', copy.price || '');
+          break;
+      }
+    }
+
+    fc.requestRenderAll();
+    setAppliedIndex(index);
+  }
+
+  // ── 调用 AI 生成文案 ─────────────────────────────────────────
+  async function handleGenerateCopy() {
+    if (!dishInfo) return;
+    setIsGeneratingCopy(true);
+    setCopyError(null);
+    setAppliedIndex(null);
+
+    try {
+      const res = await fetch('/api/generate-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dishInfo }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || '生成失败');
+      setCopySets(json.data.copySets);
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : '生成失败，请重试');
+    } finally {
+      setIsGeneratingCopy(false);
+    }
+  }
+
   // ── 导出 PNG ─────────────────────────────────────────────────
   async function handleExport() {
     const fc = fabricRef.current;
@@ -290,14 +375,11 @@ export default function StepGenerate() {
     setIsExporting(true);
     try {
       const currentZoom = fc.getZoom();
-
-      // 临时恢复到逻辑尺寸以导出原始分辨率
       fc.setZoom(1);
       fc.setDimensions({ width: POSTER_W, height: POSTER_H });
 
       const dataUrl = fc.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
 
-      // 恢复响应式尺寸
       fc.setZoom(currentZoom);
       fc.setDimensions({ width: POSTER_W * canvasScale, height: POSTER_H * canvasScale });
       fc.requestRenderAll();
@@ -310,16 +392,17 @@ export default function StepGenerate() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-4">
+    <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
       {/* 标题 */}
       <div className="text-center">
         <h2 className="text-2xl font-bold text-white mb-1">编辑海报</h2>
-        <p className="text-neutral-400 text-sm">Poster Editor · Drag · Scale · Edit Text · Export</p>
+        <p className="text-neutral-400 text-sm">AI 文案生成 · 拖拽编辑 · 一键导出</p>
       </div>
 
-      <div className="flex flex-col xl:flex-row gap-6 items-start justify-center">
-        {/* ── 左侧：工具栏 ─────────────────────────────────────── */}
-        <div className="xl:w-60 w-full flex xl:flex-col flex-row flex-wrap gap-3">
+      <div className="flex flex-col xl:flex-row gap-4 items-start">
+
+        {/* ── 左侧：设计工具栏 ─────────────────────────────────── */}
+        <div className="xl:w-56 w-full flex xl:flex-col flex-row flex-wrap gap-3 shrink-0">
 
           {/* 背景颜色 */}
           <div className="bg-neutral-900 rounded-2xl border border-neutral-700 p-4 flex-1 xl:flex-none">
@@ -430,7 +513,7 @@ export default function StepGenerate() {
         {/* ── 中间：画布 ─────────────────────────────────────────── */}
         <div
           ref={containerRef}
-          className="flex-1 flex flex-col items-center gap-4"
+          className="flex-1 flex flex-col items-center gap-3"
           style={{ minWidth: 0 }}
         >
           <div
@@ -442,6 +525,129 @@ export default function StepGenerate() {
           <p className="text-xs text-neutral-600">
             逻辑尺寸 {POSTER_W}×{POSTER_H}px · 导出为原始分辨率 PNG
           </p>
+        </div>
+
+        {/* ── 右侧：AI 文案面板 ─────────────────────────────────── */}
+        <div className="xl:w-72 w-full flex flex-col gap-3 shrink-0">
+
+          {/* 生成按钮 */}
+          <div className="bg-neutral-900 rounded-2xl border border-neutral-700 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-4 h-4 text-orange-400" />
+              <span className="text-sm font-medium text-white">AI 营销文案</span>
+            </div>
+            <p className="text-xs text-neutral-500 mb-3">
+              基于识别出的菜品信息，一键生成 3 套中英双语营销文案，点击即可应用到画布。
+            </p>
+            <Button
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium"
+              onClick={handleGenerateCopy}
+              disabled={!dishInfo || isGeneratingCopy}
+            >
+              {isGeneratingCopy ? (
+                <span className="flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  AI 生成中…
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  {copySets.length > 0 ? '重新生成' : '生成文案'}
+                </span>
+              )}
+            </Button>
+          </div>
+
+          {/* Loading 骨架屏 */}
+          {isGeneratingCopy && (
+            <div className="flex flex-col gap-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-neutral-900 rounded-2xl border border-neutral-800 p-4 animate-pulse">
+                  <div className="h-3 w-16 bg-neutral-700 rounded mb-3" />
+                  <div className="h-5 w-3/4 bg-neutral-800 rounded mb-2" />
+                  <div className="h-4 w-1/2 bg-neutral-800 rounded mb-2" />
+                  <div className="h-3 w-full bg-neutral-800 rounded" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 错误提示 */}
+          {copyError && !isGeneratingCopy && (
+            <div className="bg-red-950/30 border border-red-800 rounded-2xl p-4 text-sm text-red-300">
+              {copyError}
+            </div>
+          )}
+
+          {/* 文案列表 */}
+          {!isGeneratingCopy && copySets.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {copySets.map((copy, i) => {
+                const isApplied = appliedIndex === i;
+                return (
+                  <div
+                    key={i}
+                    className={`bg-neutral-900 rounded-2xl border p-4 transition-all cursor-pointer hover:border-orange-500/60 ${
+                      isApplied ? 'border-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.2)]' : 'border-neutral-700'
+                    }`}
+                    onClick={() => applyCopyToCanvas(copy, i)}
+                  >
+                    {/* 风格标签 */}
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STYLE_BADGE[copy.style] ?? 'bg-neutral-700 text-neutral-300 border-neutral-600'}`}>
+                        {copy.style_label}
+                      </span>
+                      {isApplied && (
+                        <span className="flex items-center gap-1 text-xs text-orange-400">
+                          <CheckCircle className="w-3 h-3" />已应用
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 主标题 */}
+                    <p className="text-white font-bold text-base leading-tight mb-0.5">
+                      {copy.main_title}
+                    </p>
+                    <p className="text-neutral-400 text-xs italic mb-2">
+                      {copy.main_title_en}
+                    </p>
+
+                    {/* 副标题 */}
+                    <p className="text-neutral-300 text-sm mb-0.5">{copy.sub_title}</p>
+                    <p className="text-neutral-500 text-xs mb-2">{copy.sub_title_en}</p>
+
+                    {/* 描述 */}
+                    <p className="text-neutral-400 text-xs leading-relaxed mb-2">
+                      {copy.description}
+                    </p>
+
+                    {/* 底部信息行 */}
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      {copy.price && (
+                        <span className="text-orange-400 text-sm font-bold">{copy.price}</span>
+                      )}
+                      {copy.promo_tag && (
+                        <span className="text-xs bg-orange-500/20 text-orange-300 px-2 py-0.5 rounded-full">
+                          {copy.promo_tag}
+                        </span>
+                      )}
+                      {copy.spice_level && (
+                        <span className="text-xs text-neutral-500">{copy.spice_level}</span>
+                      )}
+                    </div>
+
+                    {/* 应用提示 */}
+                    {!isApplied && (
+                      <div className="flex items-center gap-1 mt-2 text-xs text-neutral-600">
+                        <ChevronRight className="w-3 h-3" />
+                        点击应用到画布
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -463,7 +669,7 @@ export default function StepGenerate() {
         >
           {isExporting ? (
             <span className="flex items-center gap-2">
-              <span className="animate-spin inline-block">⏳</span>
+              <RefreshCw className="w-4 h-4 animate-spin" />
               正在导出…
             </span>
           ) : (
