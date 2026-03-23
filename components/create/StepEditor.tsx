@@ -5,7 +5,6 @@ import {
   ChevronLeft, Download,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
 } from 'lucide-react';
-import { saveAs } from 'file-saver';
 import { Button } from '@/components/ui/button';
 import PosterCanvas, { type PosterCanvasHandle } from '@/components/editor/PosterCanvas';
 import PropertyPanel from '@/components/editor/PropertyPanel';
@@ -31,28 +30,14 @@ export default function StepEditor() {
 
   const canvasRef = useRef<PosterCanvasHandle>(null);
 
-  const [leftOpen,    setLeftOpen]    = useState(true);
-  const [rightOpen,   setRightOpen]   = useState(true);
-  const [bgParams,    setBgParams]    = useState(DEFAULT_BG);
-  const [isExporting, setIsExporting] = useState(false);
-  const [langMode,    setLangMode]    = useState<LanguageMode>('bilingual');
+  const [leftOpen,     setLeftOpen]     = useState(true);
+  const [rightOpen,    setRightOpen]    = useState(true);
+  const [bgParams,     setBgParams]     = useState(DEFAULT_BG);
+  const [langMode,     setLangMode]     = useState<LanguageMode>('bilingual');
 
   const dishUrl       = processedImage || removedBgImage || enhancedImage || null;
   const backgroundUrl = selectedBackground?.url ?? null;
   const styleTemplate = STYLE_TEMPLATES.find((s) => s.id === selectedStyle) ?? null;
-
-  async function handleExport() {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    setIsExporting(true);
-    try {
-      const dataUrl = canvas.exportPng();
-      const blob    = await (await fetch(dataUrl)).blob();
-      saveAs(blob, `posterchef_${Date.now()}.png`);
-    } finally {
-      setIsExporting(false);
-    }
-  }
 
   // 共享给左右面板的 canvas 访问器
   const getCanvas = useCallback(
@@ -63,6 +48,31 @@ export default function StepEditor() {
   const handleRelayout         = useCallback(() => { canvasRef.current?.refreshTextLayer(); }, []);
   const handleChangeBackground = useCallback(() => { setStep(4 as any); }, [setStep]);
   const handleEditCopy         = useCallback(() => { setStep(5 as any); }, [setStep]);
+
+  // 双击文字编辑完成 → 同步回 Zustand store
+  const { setSelectedCopy, setPosterPreviewUrl } = usePosterStore();
+  const handleTextEdited = useCallback((type: string, text: string) => {
+    if (!selectedCopy) return;
+
+    // 映射 TextElementType → CopySet 字段
+    const fieldMap: Record<string, keyof typeof selectedCopy> = {
+      mainTitle: 'headline',
+      subTitle:  'headlineEn',
+      tagline:   'tagline',
+      price:     'price',
+    };
+    const field = fieldMap[type];
+    if (!field) return;
+
+    setSelectedCopy({ ...selectedCopy, [field]: text });
+  }, [selectedCopy, setSelectedCopy]);
+
+  // 截图并跳到 Step 7
+  const handleGoToExport = useCallback(() => {
+    const previewUrl = canvasRef.current?.exportPng(1) ?? null;
+    if (previewUrl) setPosterPreviewUrl(previewUrl);
+    setStep(7 as any);
+  }, [setPosterPreviewUrl, setStep]);
 
   return (
     <div className="flex flex-col h-full w-full" style={{ height: 'calc(100vh - 56px)' }}>
@@ -121,11 +131,10 @@ export default function StepEditor() {
 
           <Button
             className="bg-orange-500 hover:bg-orange-600 text-white h-8 px-4 text-xs font-semibold gap-1.5"
-            onClick={handleExport}
-            disabled={isExporting}
+            onClick={handleGoToExport}
           >
             <Download className="w-3.5 h-3.5" />
-            {isExporting ? '导出中…' : '下载 PNG'}
+            下载导出
           </Button>
 
           <Button
@@ -165,6 +174,7 @@ export default function StepEditor() {
           style={styleTemplate}
           copy={selectedCopy}
           languageMode={langMode}
+          onTextEdited={handleTextEdited}
         />
 
         {/* 右侧面板：属性 + 背景调节 */}

@@ -37,6 +37,7 @@ interface PosterStore extends PosterState {
 
   setPosterElements: (elements: PosterElement[]) => void;
   updateElement: (id: string, updates: Partial<PosterElement>) => void;
+  setPosterPreviewUrl: (url: string | null) => void;
 
   setError: (error: string | null) => void;
   reset: () => void;
@@ -65,6 +66,7 @@ const initialState: Omit<PosterState, 'originalImageFile'> & { originalImageFile
   posterElements: [],
   canvasWidth: CANVAS_WIDTH,
   canvasHeight: CANVAS_HEIGHT,
+  posterPreviewUrl: null,
   isMockMode: IS_MOCK_MODE,
   error: null,
 };
@@ -109,6 +111,7 @@ export const usePosterStore = create<PosterStore>()(
             el.id === id ? { ...el, ...updates } : el
           ),
         })),
+      setPosterPreviewUrl: (url) => set({ posterPreviewUrl: url }),
 
       setError: (error) => set({ error }),
       reset: () => set(initialState),
@@ -131,6 +134,7 @@ export const usePosterStore = create<PosterStore>()(
         posterElements:       state.posterElements,
         canvasWidth:          state.canvasWidth,
         canvasHeight:         state.canvasHeight,
+        posterPreviewUrl:     state.posterPreviewUrl,
       }),
     }
   )

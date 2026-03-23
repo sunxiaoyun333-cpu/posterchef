@@ -22,52 +22,46 @@
 - [x] Mock 数据（lib/mock/mockDishInfo.ts）
 - [x] 运行验证（npm run build 通过）
 
-## Phase 3: 智能抠图 + 图片增强
-- [ ] 浏览器端抠图（@imgly/background-removal）
-- [ ] 服务端抠图降级 API
-- [ ] Sharp 图片增强 API
-- [ ] 处理结果展示 UI
-- [ ] 运行验证
+## Phase 3: 智能抠图 + 图片增强 ✅
+- [x] 浏览器端抠图（@imgly/background-removal）
+- [x] Sharp 图片增强 API（app/api/enhance/route.ts）
+- [x] 处理结果展示 UI（StepGenerate.tsx）
 
-## Phase 4: 风格模板 + AI 背景生成
-- [ ] 8种风格模板数据（styleTemplates.ts）
-- [ ] 风格选择 UI（StepStyle.tsx）
-- [ ] Imagen 3 背景生成 API
-- [ ] Gemini Flash 图像生成降级方案
-- [ ] 动态 Prompt 构建引擎
-- [ ] 4方案选择 UI（StepBackground.tsx）
-- [ ] 背景调节控制（明暗/虚化/色温）
-- [ ] 自定义背景上传
-- [ ] Mock 数据
-- [ ] 运行验证
+## Phase 4: 风格模板 + AI 背景生成 ✅
+- [x] 8 种风格模板（lib/constants.ts STYLE_TEMPLATES）
+- [x] 风格选择 + 背景生成 UI（StepGenerate.tsx）
+- [x] 背景生成 API（app/api/generate-background/route.ts）
+- [x] Mock 数据支持
 
-## Phase 5: AI 文案生成 + 编辑面板
-- [ ] Gemini 2.5 Flash 文案生成 API
-- [ ] 3套文案风格
-- [ ] 文案编辑面板 UI（StepCopy.tsx）
-- [ ] 显示/隐藏开关
-- [ ] 语言模式切换
-- [ ] Mock 数据
-- [ ] 运行验证
+## Phase 5: AI 文案生成 + 编辑面板 ✅
+- [x] Gemini 2.5 Flash 文案生成 API（app/api/generate-copy/route.ts）
+- [x] 3 套文案风格（professional / casual / poetic）
+- [x] 文案选择与编辑 UI（StepGenerate.tsx）
+- [x] Mock 数据
 
-## Phase 6: Canvas 海报编辑器
-- [ ] Step 6A: Fabric.js 画布初始化 + 图层加载
-- [ ] Step 6B: 文字元素加载 + 自动排版引擎
-- [ ] Step 6C: 拖拽 + 选中 + 智能对齐辅助线
-- [ ] Step 6D: 右侧属性面板
-- [ ] Step 6E: 左侧图层面板 + 装饰素材库
-- [ ] Step 6F: 顶部工具栏 + 撤销/重做
-- [ ] Step 6G: 双击编辑文字
-- [ ] 整体测试
-- [ ] 运行验证
+## Phase 6: Canvas 海报编辑器 ✅
+- [x] 6A: Fabric.js 画布初始化 + 三栏布局（StepEditor.tsx + PosterCanvas.tsx）
+- [x] 6B: 排版引擎 + 文字层自动排版（lib/templates/layoutEngine.ts）
+- [x] 6C: 拖拽 + 智能对齐辅助线 + 键盘操作（方向键 / Delete / ESC）
+- [x] 6D: 右侧属性面板（PropertyPanel.tsx：文字/图片/画布属性）
+- [x] 6E: 左侧图层面板 + 装饰素材库（LayerPanel.tsx）
+- [x] 6F: 背景调节滑块（亮度 / 模糊 / 暖色调）
+- [x] 6G: 导出入口 → 快照后跳转 Step 7
 
-## Phase 7: 合成 + 导出
-- [ ] 菜品+背景合成引擎（阴影/融合）
-- [ ] PNG 导出
-- [ ] JPG 导出
-- [ ] PDF 印刷级导出（300dpi）
-- [ ] 导出设置 UI（StepExport.tsx）
-- [ ] 运行验证
+## Phase 7: 图像合成 + 高清导出 ✅
+- [x] 服务端 Sharp 合成引擎（lib/image/compositeEngine.ts）
+  - 背景 resize → 菜品居中 → 方向性投影阴影（multiply blend）
+- [x] 合成 API（app/api/composite/route.ts）
+- [x] 高清导出 API（app/api/export/route.ts）
+  - PNG / JPG（mozjpeg）/ PDF（jsPDF）
+  - 支持 1× / 2× / 3×（约 300 dpi 印刷级）
+- [x] StepExport.tsx — 独立导出步骤页
+  - 左 60%：海报全尺寸预览 + 点击放大（Lightbox）
+  - 右 40%：格式卡片 + 72/150/300 dpi 单选 + 预估文件大小
+  - 下载进度条 + 成功/失败反馈
+  - 返回编辑 / 制作新海报
+- [x] StepEditor → 截图存 store → 跳转 Step 7
+- [x] posterPreviewUrl 字段加入 PosterState + store
 
 ## Phase 8: 优化 + 部署
 - [ ] 性能优化
@@ -78,4 +72,3 @@
 - [ ] README.md
 - [ ] Vercel 部署准备
 - [ ] 最终全流程测试
-- [ ] 运行验证

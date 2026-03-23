@@ -128,6 +128,7 @@ export interface PosterState {
   posterElements: PosterElement[];
   canvasWidth: number;
   canvasHeight: number;
+  posterPreviewUrl: string | null;   // Step 6 导出的预览截图，供 Step 7 展示
 
   // 全局
   isMockMode: boolean;

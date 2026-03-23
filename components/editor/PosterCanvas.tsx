@@ -29,11 +29,15 @@ export interface PosterCanvasProps {
   style?:         StyleTemplate | null;
   copy?:          CopySet | null;
   languageMode?:  'bilingual' | 'cn_only' | 'en_only';
+  /** 文字内容编辑完成后回调，返回 {type, text} */
+  onTextEdited?:  (type: string, text: string) => void;
 }
 
 export interface PosterCanvasHandle {
   getCanvas:        () => Canvas | null;
-  exportPng:        () => string;
+  /** multiplier: 1 = 屏幕分辨率, 2 = 2x, 3 = 3x (印刷级) */
+  exportPng:        (multiplier?: number) => string;
+  exportJpg:        (multiplier?: number, quality?: number) => string;
   setZoom:          (z: number) => void;
   refreshTextLayer: () => Promise<void>;
 }
@@ -42,10 +46,10 @@ export interface PosterCanvasHandle {
 const MIN_ZOOM       = 0.1;
 const MAX_ZOOM       = 3;
 const ZOOM_STEP      = 0.1;
-const SNAP_THRESHOLD = 5;          // 吸附距离（逻辑像素）
+const SNAP_THRESHOLD = 5;
 const TEXT_LAYER_TAG = 'text_layer';
 const DIVIDER_TAG    = 'divider';
-const GUIDE_TAG      = '__guide__'; // 辅助线标记
+const GUIDE_TAG      = '__guide__';
 
 // ── Google Fonts ──────────────────────────────────────────────────
 const loadedFonts = new Set<string>();
@@ -65,16 +69,14 @@ async function ensureGoogleFont(fontStyle: StyleTemplate['fontStyle']): Promise<
   ]);
 }
 
-// ── 辅助：读取对象的 data 属性（Fabric 6 无类型） ─────────────────
+// ── 辅助：读写 data 属性（Fabric 6 无类型） ───────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getData = (o: FabricObject): any => (o as any).data;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const setData = (o: FabricObject, v: any) => { (o as any).data = v; };
 
-// ── 创建辅助线 ───────────────────────────────────────────────────
-function makeGuide(
-  x1: number, y1: number, x2: number, y2: number,
-): Line {
+// ── 辅助线 ───────────────────────────────────────────────────────
+function makeGuide(x1: number, y1: number, x2: number, y2: number): Line {
   const line = new Line([x1, y1, x2, y2], {
     stroke:           '#ff3333',
     strokeWidth:      1,
@@ -88,28 +90,21 @@ function makeGuide(
   return line;
 }
 
-// ── 清除所有辅助线 ───────────────────────────────────────────────
 function clearGuides(fc: Canvas) {
   fc.getObjects()
     .filter((o) => getData(o)?.tag === GUIDE_TAG)
     .forEach((o) => fc.remove(o));
 }
 
-// ── 智能对齐：计算并绘制辅助线，返回吸附后的坐标偏移 ─────────────
+// ── 智能对齐 ─────────────────────────────────────────────────────
 interface SnapResult { dx: number; dy: number }
 
-function applySnapping(
-  fc:          Canvas,
-  moving:      FabricObject,
-  posterW:     number,
-  posterH:     number,
-): SnapResult {
+function applySnapping(fc: Canvas, moving: FabricObject, posterW: number, posterH: number): SnapResult {
   clearGuides(fc);
 
-  const mBound = moving.getBoundingRect();     // 屏幕坐标
+  const mBound = moving.getBoundingRect();
   const zoom   = fc.getZoom();
 
-  // 对象逻辑坐标（除以 zoom 还原）
   const mL  = mBound.left   / zoom;
   const mT  = mBound.top    / zoom;
   const mR  = mL + mBound.width  / zoom;
@@ -117,115 +112,74 @@ function applySnapping(
   const mCX = (mL + mR) / 2;
   const mCY = (mT + mB) / 2;
 
-  // 画布中心线
   const cCX = posterW / 2;
   const cCY = posterH / 2;
 
-  // 其他可选中对象的边界
   const others = fc.getObjects().filter((o) => {
     if (o === moving) return false;
     if (!o.selectable) return false;
-    const tag = getData(o)?.tag;
-    return tag !== GUIDE_TAG;
+    return getData(o)?.tag !== GUIDE_TAG;
   });
 
   const guides: Line[] = [];
   let dx = 0, dy = 0;
   let snappedX = false, snappedY = false;
 
-  // ── 候选吸附线（x 方向） ──────────────────────────────────────
-  const xCandidates: { val: number; type: 'left'|'right'|'cx' }[] = [
-    { val: 0,    type: 'left'  },
-    { val: cCX,  type: 'cx'   },
-    { val: posterW, type: 'right' },
+  const xCandidates: { val: number }[] = [
+    { val: 0 }, { val: cCX }, { val: posterW },
   ];
-
   others.forEach((o) => {
     const b  = o.getBoundingRect();
     const oL = b.left / zoom;
     const oR = oL + b.width / zoom;
-    const oC = (oL + oR) / 2;
-    xCandidates.push(
-      { val: oL, type: 'left'  },
-      { val: oR, type: 'right' },
-      { val: oC, type: 'cx'   },
-    );
+    xCandidates.push({ val: oL }, { val: oR }, { val: (oL + oR) / 2 });
   });
 
-  // ── 候选吸附线（y 方向） ──────────────────────────────────────
-  const yCandidates: { val: number; type: 'top'|'bottom'|'cy' }[] = [
-    { val: 0,       type: 'top'    },
-    { val: cCY,     type: 'cy'    },
-    { val: posterH, type: 'bottom' },
+  const yCandidates: { val: number }[] = [
+    { val: 0 }, { val: cCY }, { val: posterH },
   ];
-
   others.forEach((o) => {
     const b  = o.getBoundingRect();
     const oT = b.top / zoom;
     const oB = oT + b.height / zoom;
-    const oC = (oT + oB) / 2;
-    yCandidates.push(
-      { val: oT, type: 'top'    },
-      { val: oB, type: 'bottom' },
-      { val: oC, type: 'cy'    },
-    );
+    yCandidates.push({ val: oT }, { val: oB }, { val: (oT + oB) / 2 });
   });
 
-  // ── X 轴吸附（按最近距离取一条） ────────────────────────────
   let bestX: { dist: number; snap: number; objVal: number } | null = null;
-
-  for (const { val, type } of xCandidates) {
-    // 吸附目标：对象的左边 / 中心 / 右边 vs 候选线
-    const checks = [
-      { objVal: mL,  snap: val },
-      { objVal: mCX, snap: val },
-      { objVal: mR,  snap: val },
-    ];
-    for (const c of checks) {
-      const dist = Math.abs(c.objVal - c.snap);
+  for (const { val } of xCandidates) {
+    for (const objVal of [mL, mCX, mR]) {
+      const dist = Math.abs(objVal - val);
       if (dist < SNAP_THRESHOLD && (!bestX || dist < bestX.dist)) {
-        bestX = { dist, snap: c.snap, objVal: c.objVal };
+        bestX = { dist, snap: val, objVal };
       }
     }
-    void type; // 仅用于过滤时区分来源，此处不影响逻辑
   }
-
   if (bestX && !snappedX) {
     dx = bestX.snap - bestX.objVal;
     snappedX = true;
     guides.push(makeGuide(bestX.snap, 0, bestX.snap, posterH));
   }
 
-  // ── Y 轴吸附 ────────────────────────────────────────────────
   let bestY: { dist: number; snap: number; objVal: number } | null = null;
-
   for (const { val } of yCandidates) {
-    const checks = [
-      { objVal: mT,  snap: val },
-      { objVal: mCY, snap: val },
-      { objVal: mB,  snap: val },
-    ];
-    for (const c of checks) {
-      const dist = Math.abs(c.objVal - c.snap);
+    for (const objVal of [mT, mCY, mB]) {
+      const dist = Math.abs(objVal - val);
       if (dist < SNAP_THRESHOLD && (!bestY || dist < bestY.dist)) {
-        bestY = { dist, snap: c.snap, objVal: c.objVal };
+        bestY = { dist, snap: val, objVal };
       }
     }
   }
-
   if (bestY && !snappedY) {
     dy = bestY.snap - bestY.objVal;
     snappedY = true;
     guides.push(makeGuide(0, bestY.snap, posterW, bestY.snap));
   }
 
-  // 加入辅助线
   guides.forEach((g) => fc.add(g));
-
   return { dx, dy };
 }
 
-// ── 把 TextElementConfig 渲染为 Fabric 对象 ───────────────────────
+// ── 把 TextElementConfig 渲染为 Fabric 对象 ──────────────────────
 function addTextElement(fc: Canvas, cfg: TextElementConfig): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dataBase = { tag: TEXT_LAYER_TAG, type: cfg.type } as any;
@@ -277,6 +231,8 @@ function addTextElement(fc: Canvas, cfg: TextElementConfig): void {
     opacity:         cfg.opacity,
     selectable:      cfg.selectable,
     splitByGrapheme: false,
+    // 双击可进入编辑模式
+    editable:        true,
   });
   setData(tb, dataBase);
 
@@ -301,13 +257,18 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       style       = null,
       copy        = null,
       languageMode = 'bilingual',
+      onTextEdited,
     },
     ref,
   ) {
     const wrapperRef  = useRef<HTMLDivElement>(null);
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const fabricRef   = useRef<Canvas | null>(null);
-    const zoomRef     = useRef(1);   // 用于键盘事件的实时 zoom
+    const zoomRef     = useRef(1);
+
+    // 用 ref 持有最新的回调，避免 stale closure
+    const onTextEditedRef = useRef(onTextEdited);
+    useEffect(() => { onTextEditedRef.current = onTextEdited; }, [onTextEdited]);
 
     const [zoom,    setZoomState] = useState(1);
     const [fitZoom, setFitZoom]   = useState(1);
@@ -335,7 +296,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       zoomRef.current = clamped;
     }, [posterWidth, posterHeight]);
 
-    // ── 加载背景图（锁定不可选） ─────────────────────────────────
+    // ── 加载背景图 ───────────────────────────────────────────────
     const loadBackground = useCallback(async (fc: Canvas, url: string) => {
       try {
         const img = await FabricImage.fromURL(url, { crossOrigin: 'anonymous' });
@@ -386,13 +347,12 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         const ratio = Math.min(maxW / (img.width ?? 1), maxH / (img.height ?? 1));
         img.scale(ratio);
         img.set({
-          left:    posterWidth  / 2,
-          top:     posterHeight * 0.35,
-          originX: 'center',
-          originY: 'center',
-          // 选中控制：显示旋转 + 缩放手柄
-          hasControls:       true,
-          hasBorders:        true,
+          left:        posterWidth  / 2,
+          top:         posterHeight * 0.35,
+          originX:     'center',
+          originY:     'center',
+          hasControls: true,
+          hasBorders:  true,
         });
         setData(img, { key: 'dish' });
         fc.add(img);
@@ -401,7 +361,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       } catch { /* 静默 */ }
     }, [posterWidth, posterHeight]);
 
-    // ── 把文字层置顶 ─────────────────────────────────────────────
+    // ── 文字层工具 ───────────────────────────────────────────────
     function bringTextLayerToFront(fc: Canvas) {
       fc.getObjects()
         .filter((o) => {
@@ -411,7 +371,6 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         .forEach((o) => fc.bringObjectToFront(o));
     }
 
-    // ── 清除文字层 ───────────────────────────────────────────────
     function clearTextLayer(fc: Canvas) {
       fc.getObjects()
         .filter((o) => {
@@ -427,7 +386,6 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       await ensureGoogleFont(style.fontStyle);
       clearTextLayer(fc);
 
-      // 装饰分隔线
       const divider = new Rect({
         left:       posterWidth * 0.30,
         top:        posterHeight * 0.655,
@@ -453,15 +411,14 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       fc.requestRenderAll();
     }, [style, copy, languageMode, posterWidth, posterHeight]);
 
-    // ── 注册智能对齐 + 键盘事件 ──────────────────────────────────
+    // ── 注册交互事件 ─────────────────────────────────────────────
     const setupInteractions = useCallback((fc: Canvas) => {
 
-      // --- 拖拽时智能对齐 ---
+      // --- 拖拽吸附 ---
       fc.on('object:moving', ({ target }) => {
         if (!target) return;
         const { dx, dy } = applySnapping(fc, target, posterWidth, posterHeight);
         if (dx !== 0 || dy !== 0) {
-          // 在逻辑坐标中修正位置
           const zoom = fc.getZoom();
           target.set({
             left: (target.left ?? 0) + dx * zoom,
@@ -477,20 +434,48 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         fc.requestRenderAll();
       });
 
-      // --- 键盘：方向键移动 / Delete / ESC ---
+      // --- 双击 → 进入文字编辑模式 ---
+      fc.on('mouse:dblclick', ({ target }) => {
+        if (!target) return;
+        if (target instanceof Textbox && target.selectable) {
+          fc.setActiveObject(target);
+          target.enterEditing();
+          target.selectAll();
+          fc.requestRenderAll();
+        }
+      });
+
+      // --- 文字编辑结束：触发回调 ---
+      fc.on('text:editing:exited', ({ target }) => {
+        if (!target) return;
+        const tb   = target as Textbox;
+        const data = getData(tb as unknown as FabricObject);
+        const type = data?.type ?? '';
+        const text = (tb.text as string) ?? '';
+        if (type && onTextEditedRef.current) {
+          onTextEditedRef.current(type, text);
+        }
+        // 同时确保 PropertyPanel 也能感知到（触发 object:modified）
+        fc.fire('object:modified', { target: tb as unknown as FabricObject });
+      });
+
+      // --- ESC 退出文字编辑（Fabric 已内置，这里补 canvas-level ESC） ---
       const onKeyDown = (e: KeyboardEvent) => {
         const target = fc.getActiveObject();
 
-        // ESC → 取消选中
         if (e.key === 'Escape') {
-          fc.discardActiveObject();
-          fc.requestRenderAll();
+          // 如果正在编辑文字，先退出编辑，再取消选中
+          if (target instanceof Textbox && (target as Textbox).isEditing) {
+            (target as Textbox).exitEditing();
+            fc.requestRenderAll();
+          } else {
+            fc.discardActiveObject();
+            fc.requestRenderAll();
+          }
           return;
         }
 
-        // Delete / Backspace → 删除（文字编辑中不触发）
         if ((e.key === 'Delete' || e.key === 'Backspace') && target) {
-          // 如果是 Textbox 且正在编辑中，不拦截
           if (target instanceof Textbox && (target as Textbox).isEditing) return;
           fc.remove(target);
           fc.discardActiveObject();
@@ -499,7 +484,6 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
           return;
         }
 
-        // 方向键移动
         const isArrow = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key);
         if (!isArrow || !target) return;
         if (target instanceof Textbox && (target as Textbox).isEditing) return;
@@ -594,7 +578,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       return () => window.removeEventListener('resize', onResize);
     }, [calcFitZoom, applyZoom]);
 
-    // ── 滚轮缩放（Ctrl/Cmd + wheel） ─────────────────────────────
+    // ── 滚轮缩放 ─────────────────────────────────────────────────
     useEffect(() => {
       const el = wrapperRef.current;
       if (!el) return;
@@ -610,15 +594,27 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
     // ── 暴露给父组件 ─────────────────────────────────────────────
     useImperativeHandle(ref, () => ({
       getCanvas: () => fabricRef.current,
-      exportPng: () => {
+      exportPng: (multiplier = 1) => {
         const fc = fabricRef.current;
         if (!fc) return '';
-        // 导出前清除辅助线
         clearGuides(fc);
         const cz = fc.getZoom();
         fc.setZoom(1);
         fc.setDimensions({ width: posterWidth, height: posterHeight });
-        const dataUrl = fc.toDataURL({ format: 'png', quality: 1, multiplier: 1 });
+        const dataUrl = fc.toDataURL({ format: 'png', quality: 1, multiplier });
+        fc.setZoom(cz);
+        fc.setDimensions({ width: posterWidth * cz, height: posterHeight * cz });
+        fc.requestRenderAll();
+        return dataUrl;
+      },
+      exportJpg: (multiplier = 1, quality = 0.92) => {
+        const fc = fabricRef.current;
+        if (!fc) return '';
+        clearGuides(fc);
+        const cz = fc.getZoom();
+        fc.setZoom(1);
+        fc.setDimensions({ width: posterWidth, height: posterHeight });
+        const dataUrl = fc.toDataURL({ format: 'jpeg', quality, multiplier });
         fc.setZoom(cz);
         fc.setDimensions({ width: posterWidth * cz, height: posterHeight * cz });
         fc.requestRenderAll();
