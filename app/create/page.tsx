@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { ChefHat } from 'lucide-react';
 import { usePosterStore } from '@/lib/store/posterStore';
-import StepUpload from '@/components/create/StepUpload';
+import StepUpload    from '@/components/create/StepUpload';
 import StepRecognize from '@/components/create/StepRecognize';
-import StepGenerate from '@/components/create/StepGenerate';
+import StepGenerate  from '@/components/create/StepGenerate';
+import StepEditor    from '@/components/create/StepEditor';
 
 const STEP_LABELS = [
   '上传照片',
@@ -17,13 +18,17 @@ const STEP_LABELS = [
   '导出',
 ];
 
+// 步骤 6（编辑器）需要全高，不带内边距
+const FULLSCREEN_STEPS: number[] = [6];
+
 export default function CreatePage() {
   const { currentStep } = usePosterStore();
+  const isFullscreen = FULLSCREEN_STEPS.includes(currentStep);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col">
-      {/* 顶部导航 */}
-      <nav className="border-b border-white/10 px-6 py-3 flex items-center gap-4">
+      {/* 顶部导航（编辑器步骤时也保留，高度 56px） */}
+      <nav className="shrink-0 border-b border-white/10 px-6 py-3 flex items-center gap-4">
         <Link href="/" className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors">
           <ChefHat className="w-5 h-5 text-orange-400" />
           <span className="text-sm font-medium">PosterChef</span>
@@ -34,7 +39,7 @@ export default function CreatePage() {
           {STEP_LABELS.map((label, i) => {
             const step = i + 1;
             const isActive = step === currentStep;
-            const isDone = step < currentStep;
+            const isDone   = step < currentStep;
             return (
               <div key={step} className="flex items-center gap-1 shrink-0">
                 <div
@@ -58,10 +63,22 @@ export default function CreatePage() {
       </nav>
 
       {/* 主体内容 */}
-      <main className="flex-1 flex items-start justify-center px-6 py-10">
+      <main
+        className={`flex-1 flex ${
+          isFullscreen
+            ? 'overflow-hidden'
+            : 'items-start justify-center px-6 py-10'
+        }`}
+      >
         {currentStep === 1 && <StepUpload />}
         {currentStep === 2 && <StepRecognize />}
-        {currentStep >= 3 && <StepGenerate />}
+        {(currentStep === 3 || currentStep === 4 || currentStep === 5) && <StepGenerate />}
+        {currentStep === 6 && <StepEditor />}
+        {currentStep === 7 && (
+          <div className="flex flex-col items-center gap-4 text-neutral-500">
+            <p>Step 7 — 导出，即将上线…</p>
+          </div>
+        )}
       </main>
     </div>
   );
