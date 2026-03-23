@@ -2,14 +2,14 @@
 
 import { useRef, useState, useCallback } from 'react';
 import {
-  ChevronLeft, Download, Layers,
+  ChevronLeft, Download,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
-  Image as ImageIcon, Type, Globe,
 } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { Button } from '@/components/ui/button';
 import PosterCanvas, { type PosterCanvasHandle } from '@/components/editor/PosterCanvas';
 import PropertyPanel from '@/components/editor/PropertyPanel';
+import LayerPanel from '@/components/editor/LayerPanel';
 import { usePosterStore } from '@/lib/store/posterStore';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, STYLE_TEMPLATES } from '@/lib/constants';
 import type { LanguageMode } from '@/lib/templates/layoutEngine';
@@ -26,15 +26,16 @@ export default function StepEditor() {
     selectedCopy,
     dishInfo,
     prevStep,
+    setStep,
   } = usePosterStore();
 
   const canvasRef = useRef<PosterCanvasHandle>(null);
 
-  const [leftOpen,  setLeftOpen]  = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
-  const [bgParams,  setBgParams]  = useState(DEFAULT_BG);
+  const [leftOpen,    setLeftOpen]    = useState(true);
+  const [rightOpen,   setRightOpen]   = useState(true);
+  const [bgParams,    setBgParams]    = useState(DEFAULT_BG);
   const [isExporting, setIsExporting] = useState(false);
-  const [langMode,  setLangMode]  = useState<LanguageMode>('bilingual');
+  const [langMode,    setLangMode]    = useState<LanguageMode>('bilingual');
 
   const dishUrl       = processedImage || removedBgImage || enhancedImage || null;
   const backgroundUrl = selectedBackground?.url ?? null;
@@ -53,27 +54,15 @@ export default function StepEditor() {
     }
   }
 
-  // 提供给 PropertyPanel 获取 canvas 实例的回调
+  // 共享给左右面板的 canvas 访问器
   const getCanvas = useCallback(
     () => canvasRef.current?.getCanvas() ?? null,
     [],
   );
 
-  // 重新自动排版
-  const handleRelayout = useCallback(() => {
-    canvasRef.current?.refreshTextLayer();
-  }, []);
-
-  // 更换背景 → 回到步骤 4
-  const { setStep } = usePosterStore();
-  const handleChangeBackground = useCallback(() => {
-    setStep(4 as any);
-  }, [setStep]);
-
-  // 编辑文案 → 回到步骤 5
-  const handleEditCopy = useCallback(() => {
-    setStep(5 as any);
-  }, [setStep]);
+  const handleRelayout         = useCallback(() => { canvasRef.current?.refreshTextLayer(); }, []);
+  const handleChangeBackground = useCallback(() => { setStep(4 as any); }, [setStep]);
+  const handleEditCopy         = useCallback(() => { setStep(5 as any); }, [setStep]);
 
   return (
     <div className="flex flex-col h-full w-full" style={{ height: 'calc(100vh - 56px)' }}>
@@ -153,61 +142,43 @@ export default function StepEditor() {
       {/* ── 主体三栏 ────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* 左侧面板 */}
+        {/* 左侧面板：图层 + 装饰素材 */}
         <aside
           className="shrink-0 flex flex-col bg-neutral-900 border-r border-neutral-800 transition-all duration-200"
-          style={{ width: leftOpen ? 250 : 0, opacity: leftOpen ? 1 : 0, overflow: leftOpen ? 'auto' : 'hidden' }}
+          style={{ width: leftOpen ? 260 : 0, opacity: leftOpen ? 1 : 0, overflow: leftOpen ? 'visible' : 'hidden' }}
         >
-          <div className="p-4 min-w-[250px]">
-            <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold mb-3 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5" />图层
-            </p>
+          <div className="min-w-[260px] h-full flex flex-col overflow-hidden">
+            <LayerPanel getCanvas={getCanvas} />
+          </div>
+        </aside>
 
-            <div className="flex flex-col gap-2">
-              <LayerItem
-                icon={<ImageIcon className="w-3.5 h-3.5" />}
-                label="背景图"
-                subLabel={backgroundUrl ? (styleTemplate?.name ?? '已加载') : '未设置'}
-                active={false}
-              />
-              <LayerItem
-                icon={<ImageIcon className="w-3.5 h-3.5" />}
-                label="菜品图片"
-                subLabel={dishUrl ? '已加载' : '未设置'}
-                active
-              />
-              <LayerItem
-                icon={<Type className="w-3.5 h-3.5" />}
-                label="文字层"
-                subLabel={selectedCopy ? '已排版' : '无文案'}
-                active={!!selectedCopy}
-              />
-            </div>
+        {/* 中间：画布 */}
+        <PosterCanvas
+          ref={canvasRef}
+          posterWidth={CANVAS_WIDTH}
+          posterHeight={CANVAS_HEIGHT}
+          backgroundUrl={backgroundUrl}
+          dishUrl={dishUrl}
+          brightness={bgParams.brightness}
+          blur={bgParams.blur}
+          warmth={bgParams.warmth}
+          style={styleTemplate}
+          copy={selectedCopy}
+          languageMode={langMode}
+        />
 
-            {/* 文案预览 */}
-            {selectedCopy && (
-              <div className="mt-4 bg-neutral-800/60 rounded-xl p-3 border border-neutral-700">
-                <p className="text-[10px] text-neutral-500 mb-1.5 uppercase tracking-wider">当前文案</p>
-                <p className="text-sm font-bold text-white leading-snug">{selectedCopy.headline}</p>
-                <p className="text-xs text-neutral-400 italic">{selectedCopy.headlineEn}</p>
-                {selectedCopy.price && (
-                  <p className="text-orange-400 text-sm font-bold mt-1">{selectedCopy.price}</p>
-                )}
-              </div>
-            )}
-
-            {!selectedCopy && (
-              <p className="text-xs text-neutral-600 mt-4 leading-relaxed">
-                在上一步选择文案后，此处将显示排版预览。
-              </p>
-            )}
-
+        {/* 右侧面板：属性 + 背景调节 */}
+        <aside
+          className="shrink-0 flex flex-col bg-neutral-900 border-l border-neutral-800 transition-all duration-200"
+          style={{ width: rightOpen ? 300 : 0, opacity: rightOpen ? 1 : 0, overflow: rightOpen ? 'auto' : 'hidden' }}
+        >
+          <div className="min-w-[300px]">
             {/* 背景调节 */}
-            <div className="mt-5">
-              <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold mb-3">
+            <div className="px-4 pt-4 pb-2 border-b border-neutral-800">
+              <p className="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold mb-3">
                 背景调节
               </p>
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3">
                 <SliderControl
                   label="亮度" labelEn="Brightness"
                   value={bgParams.brightness} min={-1} max={1} step={0.05}
@@ -230,63 +201,12 @@ export default function StepEditor() {
                   className="text-xs text-neutral-600 hover:text-neutral-400 self-start transition-colors"
                   onClick={() => setBgParams(DEFAULT_BG)}
                 >
-                  重置全部
+                  重置
                 </button>
               </div>
             </div>
 
-            {/* 语言模式 */}
-            <div className="mt-5">
-              <p className="text-xs text-neutral-500 uppercase tracking-wider font-semibold mb-3 flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5" />语言模式
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {(
-                  [
-                    { id: 'bilingual', label: '中英双语', desc: '中文 + English 双行显示' },
-                    { id: 'cn_only',   label: '纯中文',   desc: '仅显示中文内容' },
-                    { id: 'en_only',   label: '纯英文',   desc: 'English only' },
-                  ] as { id: LanguageMode; label: string; desc: string }[]
-                ).map(({ id, label, desc }) => (
-                  <button
-                    key={id}
-                    onClick={() => setLangMode(id)}
-                    className={`text-left px-3 py-2 rounded-lg border transition-colors ${
-                      langMode === id
-                        ? 'border-orange-500/50 bg-orange-500/10 text-orange-300'
-                        : 'border-neutral-700 bg-neutral-800/50 text-neutral-400 hover:border-neutral-600'
-                    }`}
-                  >
-                    <p className="text-xs font-medium">{label}</p>
-                    <p className="text-[10px] text-neutral-600 mt-0.5">{desc}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* 中间：画布 */}
-        <PosterCanvas
-          ref={canvasRef}
-          posterWidth={CANVAS_WIDTH}
-          posterHeight={CANVAS_HEIGHT}
-          backgroundUrl={backgroundUrl}
-          dishUrl={dishUrl}
-          brightness={bgParams.brightness}
-          blur={bgParams.blur}
-          warmth={bgParams.warmth}
-          style={styleTemplate}
-          copy={selectedCopy}
-          languageMode={langMode}
-        />
-
-        {/* 右侧面板 — 属性面板 */}
-        <aside
-          className="shrink-0 flex flex-col bg-neutral-900 border-l border-neutral-800 transition-all duration-200"
-          style={{ width: rightOpen ? 300 : 0, opacity: rightOpen ? 1 : 0, overflow: rightOpen ? 'auto' : 'hidden' }}
-        >
-          <div className="min-w-[300px]">
+            {/* 属性面板 */}
             <PropertyPanel
               getCanvas={getCanvas}
               onRelayout={handleRelayout}
@@ -300,25 +220,7 @@ export default function StepEditor() {
   );
 }
 
-// ── 子组件 ────────────────────────────────────────────────────────
-
-function LayerItem({ icon, label, subLabel, active }: {
-  icon: React.ReactNode; label: string; subLabel: string; active: boolean;
-}) {
-  return (
-    <div className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
-      active
-        ? 'bg-orange-500/10 border-orange-500/30 text-orange-300'
-        : 'bg-neutral-800/50 border-neutral-700 text-neutral-400 hover:border-neutral-600'
-    }`}>
-      <span className="shrink-0">{icon}</span>
-      <div className="flex flex-col min-w-0">
-        <span className="text-xs font-medium truncate">{label}</span>
-        <span className="text-[10px] text-neutral-600 truncate">{subLabel}</span>
-      </div>
-    </div>
-  );
-}
+// ── 子控件 ────────────────────────────────────────────────────────
 
 function SliderControl({ label, labelEn, value, min, max, step, onChange, format }: {
   label: string; labelEn: string; value: number;
@@ -327,7 +229,7 @@ function SliderControl({ label, labelEn, value, min, max, step, onChange, format
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-1">
         <div>
           <span className="text-xs font-medium text-white">{label}</span>
           <span className="text-[10px] text-neutral-600 ml-1">{labelEn}</span>
@@ -339,10 +241,6 @@ function SliderControl({ label, labelEn, value, min, max, step, onChange, format
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="w-full h-1.5 rounded-full appearance-none bg-neutral-700 accent-orange-500 cursor-pointer"
       />
-      <div className="flex justify-between mt-0.5">
-        <span className="text-[10px] text-neutral-700">{min}</span>
-        <span className="text-[10px] text-neutral-700">{max}</span>
-      </div>
     </div>
   );
 }
