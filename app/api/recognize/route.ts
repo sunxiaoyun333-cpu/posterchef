@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFlashModel } from '@/lib/ai/geminiClient';
+
+export const maxDuration = 60; // Vercel Pro: 60s for Gemini multimodal
 import { MOCK_DISH_INFO } from '@/lib/mock/mockDishInfo';
 import type { RawDishApiResponse } from '@/lib/types';
 

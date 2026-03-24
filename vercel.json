@@ -1,0 +1,29 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "functions": {
+    "app/api/recognize/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/generate-copy/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/enhance/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/enhance-image/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/composite/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/export/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/remove-bg/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}

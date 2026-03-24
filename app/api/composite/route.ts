@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { compositeImages } from '@/lib/image/compositeEngine';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/lib/constants';
 
+export const maxDuration = 30;
+
 /**
  * POST /api/composite
  *

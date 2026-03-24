@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 
+export const maxDuration = 30;
+
 /**
  * 图片增强 API
  * 微妙增强：对比度、饱和度、锐化——让食物更有食欲感

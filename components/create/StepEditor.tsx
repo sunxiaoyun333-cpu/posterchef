@@ -4,11 +4,13 @@ import { useRef, useState, useCallback } from 'react';
 import {
   ChevronLeft, Download,
   PanelLeftClose, PanelRightClose, PanelLeftOpen, PanelRightOpen,
+  Smartphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import PosterCanvas, { type PosterCanvasHandle } from '@/components/editor/PosterCanvas';
 import PropertyPanel from '@/components/editor/PropertyPanel';
 import LayerPanel from '@/components/editor/LayerPanel';
+import ShortcutHelpDialog from '@/components/editor/ShortcutHelpDialog';
 import { usePosterStore } from '@/lib/store/posterStore';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, STYLE_TEMPLATES } from '@/lib/constants';
 import type { LanguageMode } from '@/lib/templates/layoutEngine';
@@ -76,6 +78,37 @@ export default function StepEditor() {
 
   return (
     <div className="flex flex-col h-full w-full" style={{ height: 'calc(100vh - 56px)' }}>
+
+      {/* ── 移动端提示卡片 ───────────────────────────────────────── */}
+      <div className="md:hidden flex flex-col items-center justify-center gap-6 p-8 text-center h-full">
+        <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+          <Smartphone className="w-8 h-8 text-orange-400" />
+        </div>
+        <div>
+          <h3 className="text-white font-bold text-lg mb-2">📱 请使用电脑获得最佳编辑体验</h3>
+          <p className="text-neutral-400 text-sm">For the best editing experience, please open PosterChef on a desktop browser.</p>
+        </div>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <Button
+            className="w-full bg-orange-500 hover:bg-orange-600 text-white"
+            onClick={handleGoToExport}
+          >
+            直接导出（自动排版）
+            <Download className="w-4 h-4 ml-2" />
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full border-neutral-700 text-neutral-400"
+            onClick={prevStep}
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            返回上一步
+          </Button>
+        </div>
+      </div>
+
+      {/* ── 桌面端编辑器 ─────────────────────────────────────────── */}
+      <div className="hidden md:flex flex-col h-full w-full">
 
       {/* ── 顶部工具栏 ──────────────────────────────────────────── */}
       <header className="shrink-0 flex items-center gap-3 px-4 py-2 bg-neutral-900 border-b border-neutral-800">
@@ -162,20 +195,24 @@ export default function StepEditor() {
         </aside>
 
         {/* 中间：画布 */}
-        <PosterCanvas
-          ref={canvasRef}
-          posterWidth={CANVAS_WIDTH}
-          posterHeight={CANVAS_HEIGHT}
-          backgroundUrl={backgroundUrl}
-          dishUrl={dishUrl}
-          brightness={bgParams.brightness}
-          blur={bgParams.blur}
-          warmth={bgParams.warmth}
-          style={styleTemplate}
-          copy={selectedCopy}
-          languageMode={langMode}
-          onTextEdited={handleTextEdited}
-        />
+        <div className="relative flex-1 min-w-0">
+          <PosterCanvas
+            ref={canvasRef}
+            posterWidth={CANVAS_WIDTH}
+            posterHeight={CANVAS_HEIGHT}
+            backgroundUrl={backgroundUrl}
+            dishUrl={dishUrl}
+            brightness={bgParams.brightness}
+            blur={bgParams.blur}
+            warmth={bgParams.warmth}
+            style={styleTemplate}
+            copy={selectedCopy}
+            languageMode={langMode}
+            onTextEdited={handleTextEdited}
+          />
+          {/* 快捷键帮助 */}
+          <ShortcutHelpDialog />
+        </div>
 
         {/* 右侧面板：属性 + 背景调节 */}
         <aside
@@ -226,6 +263,7 @@ export default function StepEditor() {
           </div>
         </aside>
       </div>
+      </div>  {/* end desktop editor */}
     </div>
   );
 }

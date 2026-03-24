@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 
+export const maxDuration = 30;
+
 /**
  * 服务端抠图降级方案（基于 Sharp 边缘检测 + 颜色阈值）
  * 质量低于浏览器端 AI 抠图，仅作兜底

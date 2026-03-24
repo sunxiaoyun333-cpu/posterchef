@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { usePosterStore } from '@/lib/store/posterStore';
 import { recognizeDish } from '@/lib/ai/recognizeDish';
 import { removeBackgroundWithTimeout } from '@/lib/image/removeBackground';
+import { apiPost, ApiError } from '@/lib/apiClient';
+import { toast } from '@/lib/toast';
 import type { DishInfo } from '@/lib/types';
 
 // ----------------------------------------------------------------
@@ -67,10 +69,14 @@ export default function StepRecognize() {
       const mimeType = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
       const result = await recognizeDish(base64, mimeType);
       setDishInfo(result);
+      toast.success('AI 识别完成！/ Recognition complete');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '识别失败，请重试';
+      const msg = err instanceof ApiError
+        ? err.message
+        : err instanceof Error ? err.message : '识别失败，请重试 / Recognition failed';
       setLocalError(msg);
       setError(msg);
+      toast.error(msg);
     } finally {
       setIsRecognizing(false);
     }
@@ -121,28 +127,35 @@ export default function StepRecognize() {
         setEnhanceProgress((prev: number) => Math.min(prev + 15, 90));
       }, 200);
 
-      const res = await fetch('/api/enhance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64, mimeType }),
-      });
+      try {
+        const json = await apiPost<{ success: boolean; data: { imageBase64: string; mimeType: string }; error?: string }>(
+          '/api/enhance',
+          { imageBase64: base64, mimeType },
+          { timeoutMs: 20_000 },
+        );
 
-      clearInterval(fakeProgress);
-      setEnhanceProgress(100);
+        clearInterval(fakeProgress);
+        setEnhanceProgress(100);
 
-      if (!res.ok) throw new Error('图片增强失败');
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error || '图片增强失败');
-
-      const enhancedDataUrl = `data:${json.data.mimeType};base64,${json.data.imageBase64}`;
-      setEnhancedImage(enhancedDataUrl);
-
-      // --- 决定最终使用哪张图 ---
-      setProcessedImage(useRemovedBg ? removedUrl : enhancedDataUrl);
+        if (!json.success) throw new Error(json.error || '图片增强失败');
+        const enhancedDataUrl = `data:${json.data.mimeType};base64,${json.data.imageBase64}`;
+        setEnhancedImage(enhancedDataUrl);
+        setProcessedImage(useRemovedBg ? removedUrl : enhancedDataUrl);
+      } catch (enhErr) {
+        clearInterval(fakeProgress);
+        setEnhanceProgress(100);
+        // 增强失败不阻断流程，直接使用抠图结果
+        toast.warn('图片增强跳过，使用抠图结果 / Enhancement skipped');
+        setEnhancedImage(removedUrl);
+        setProcessedImage(removedUrl);
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '处理失败，请重试';
+      const msg = err instanceof ApiError
+        ? err.message
+        : err instanceof Error ? err.message : '处理失败，请重试 / Processing failed';
       setLocalError(msg);
       setError(msg);
+      toast.error(msg);
     } finally {
       setIsProcessing(false);
     }

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { Inter, Noto_Serif_SC } from 'next/font/google';
 import './globals.css';
 import { cn } from '@/lib/utils';
+import ToastContainer from '@/components/ui/ToastContainer';
+import MockModeBadge from '@/components/ui/MockModeBadge';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -28,6 +30,8 @@ export default function RootLayout({
     <html lang="zh-CN" className={cn(inter.variable, notoSerifSC.variable)}>
       <body className={cn('font-sans antialiased bg-background text-foreground')}>
         {children}
+        <ToastContainer />
+        <MockModeBadge />
       </body>
     </html>
   );

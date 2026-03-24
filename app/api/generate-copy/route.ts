@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+
+export const maxDuration = 60; // Vercel Pro: 60s for Gemini text generation
+import { MOCK_COPY_SETS } from '@/lib/mock/mockCopySets';
 import type { DishInfo } from '@/lib/types';
 
 const SYSTEM_PROMPT = `你是一位精通美国餐厅营销的专业文案撰写人，特别擅长中餐和亚洲餐厅的菜品推广文案。你深谙美国消费者的口味偏好和营销心理。请根据提供的菜品信息，生成3套不同风格（高端正式、活泼亲切、简洁促销）的中英双语营销文案，返回指定的 JSON 数组格式（包含 main_title, sub_title, description, price, promo_tag, spice_level, allergens）。只返回纯 JSON 数组，不要 markdown。`;
@@ -29,8 +32,10 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ success: false, error: '未配置 GEMINI_API_KEY' }, { status: 500 });
+    if (!apiKey || process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
+      // Mock 模式或无 API Key：返回 mock 文案
+      await new Promise((r) => setTimeout(r, 800)); // 模拟延迟
+      return NextResponse.json({ success: true, data: { copySets: MOCK_COPY_SETS } });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);

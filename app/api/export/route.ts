@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@/lib/constants';
 
+export const maxDuration = 30;
+
 /**
  * POST /api/export
  *

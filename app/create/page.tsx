@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { ChefHat } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { usePosterStore } from '@/lib/store/posterStore';
+import { useNetworkStatus } from '@/lib/hooks/useNetworkStatus';
 import StepUpload    from '@/components/create/StepUpload';
 import StepRecognize from '@/components/create/StepRecognize';
 import StepGenerate  from '@/components/create/StepGenerate';
 import StepEditor    from '@/components/create/StepEditor';
 import StepExport    from '@/components/create/StepExport';
+import ErrorBoundary from '@/components/ui/ErrorBoundary';
 
 const STEP_LABELS = [
   '上传照片',
@@ -22,14 +25,21 @@ const STEP_LABELS = [
 // 步骤 6、7 需要全高，不带内边距
 const FULLSCREEN_STEPS: number[] = [6, 7];
 
+const fadeVariants = {
+  hidden:  { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0,  transition: { duration: 0.25, ease: 'easeOut' } },
+  exit:    { opacity: 0, y: -8, transition: { duration: 0.15, ease: 'easeIn'  } },
+};
+
 export default function CreatePage() {
   const { currentStep } = usePosterStore();
+  useNetworkStatus();  // 网络断开/恢复 Toast
   const isFullscreen = FULLSCREEN_STEPS.includes(currentStep);
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col">
       {/* 顶部导航 */}
-      <nav className="shrink-0 border-b border-white/10 px-6 py-3 flex items-center gap-4">
+      <nav className="shrink-0 border-b border-white/10 px-4 sm:px-6 py-3 flex items-center gap-4">
         <Link href="/" className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors">
           <ChefHat className="w-5 h-5 text-orange-400" />
           <span className="text-sm font-medium">PosterChef</span>
@@ -51,7 +61,7 @@ export default function CreatePage() {
                   >
                     {isDone ? '✓' : step}
                   </span>
-                  {label}
+                  <span className="hidden sm:inline">{label}</span>
                 </div>
                 {i < STEP_LABELS.length - 1 && (
                   <div className={`w-4 h-px ${isDone ? 'bg-neutral-600' : 'bg-neutral-800'}`} />
@@ -64,13 +74,32 @@ export default function CreatePage() {
 
       {/* 主体内容 */}
       <main className={`flex-1 flex ${
-        isFullscreen ? 'overflow-hidden' : 'items-start justify-center px-6 py-10'
+        isFullscreen ? 'overflow-hidden' : 'items-start justify-center px-4 sm:px-6 py-10'
       }`}>
-        {currentStep === 1 && <StepUpload />}
-        {currentStep === 2 && <StepRecognize />}
-        {(currentStep === 3 || currentStep === 4 || currentStep === 5) && <StepGenerate />}
-        {currentStep === 6 && <StepEditor />}
-        {currentStep === 7 && <StepExport />}
+        <ErrorBoundary>
+          {isFullscreen ? (
+            // 全屏步骤不需要动画包裹（避免 overflow 问题）
+            <>
+              {currentStep === 6 && <StepEditor />}
+              {currentStep === 7 && <StepExport />}
+            </>
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentStep}
+                variants={fadeVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                className="w-full"
+              >
+                {currentStep === 1 && <StepUpload />}
+                {currentStep === 2 && <StepRecognize />}
+                {(currentStep === 3 || currentStep === 4 || currentStep === 5) && <StepGenerate />}
+              </motion.div>
+            </AnimatePresence>
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   );
