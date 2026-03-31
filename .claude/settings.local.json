@@ -12,7 +12,18 @@
       "Bash(npx shadcn@latest add badge progress skeleton input textarea -y)",
       "Bash(node:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx next:*)",
+      "Bash(ls D:/posterchef/.env*)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)[:5]\\)\")",
+      "Bash(xargs grep:*)",
+      "Bash(grep -rn PROCESS_ASSETS_STAGE_OPTIMIZE_SIZEs*=s* node_modules/)",
+      "Bash(grep -rn PROCESS_ASSETS_STAGE_OPTIMIZE_SIZEs*= node_modules/next/dist/)",
+      "Bash(echo $TMPDIR)",
+      "Bash(env)",
+      "Bash(grep -rn process.env. --include=*.ts --include=*.tsx --include=*.mjs D:/posterchef/app D:/posterchef/lib D:/posterchef/components D:/posterchef/next.config.mjs)",
+      "Bash(python -m json.tool)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

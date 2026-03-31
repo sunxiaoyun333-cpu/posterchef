@@ -1,10 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
-  PosterState, StepId, DishInfo, StyleId,
-  BackgroundOption, CopySet, PosterElement,
+  PosterState, StepId, DishInfo, CopySet, PosterElement,
 } from '@/lib/types';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, IS_MOCK_MODE } from '@/lib/constants';
+
+export type PosterStyleId =
+  | 'modern-minimalist'
+  | 'rustic-farmhouse'
+  | 'elegant-fine-dining'
+  | 'bright-cafe'
+  | 'vintage-chalkboard'
+  | 'bold-pop';
 
 interface PosterStore extends PosterState {
   setStep: (step: StepId) => void;
@@ -17,19 +24,13 @@ interface PosterStore extends PosterState {
   setDishInfo: (info: DishInfo) => void;
   setIsRecognizing: (v: boolean) => void;
 
-  // Phase 3
-  setRemovedBgImage: (image: string) => void;
-  setEnhancedImage: (image: string) => void;
-  setProcessedImage: (image: string) => void;
-  setIsProcessing: (v: boolean) => void;
-  setRemoveBgProgress: (v: number) => void;
-  setEnhanceProgress: (v: number | ((prev: number) => number)) => void;
-  setUseRemovedBg: (v: boolean) => void;
-
-  setSelectedStyle: (style: StyleId) => void;
-  setGeneratedBackgrounds: (bgs: BackgroundOption[]) => void;
-  setSelectedBackground: (bg: BackgroundOption) => void;
-  setIsGeneratingBackground: (v: boolean) => void;
+  // Phase 9: 风格选择 + AI 全景生图
+  selectedPosterStyle: PosterStyleId | null;
+  setSelectedPosterStyle: (style: PosterStyleId) => void;
+  generatedPosterImage: string | null;   // AI 生成的完整海报底图 base64
+  setGeneratedPosterImage: (img: string | null) => void;
+  isGeneratingPoster: boolean;
+  setIsGeneratingPoster: (v: boolean) => void;
 
   setGeneratedCopySets: (sets: CopySet[]) => void;
   setSelectedCopy: (copy: CopySet) => void;
@@ -43,19 +44,16 @@ interface PosterStore extends PosterState {
   reset: () => void;
 }
 
-const initialState: Omit<PosterState, 'originalImageFile'> & { originalImageFile: null } = {
+const initialState: Omit<PosterState, 'originalImageFile'> & { originalImageFile: null } & {
+  selectedPosterStyle: PosterStyleId | null;
+  generatedPosterImage: string | null;
+  isGeneratingPoster: boolean;
+} = {
   currentStep: 1,
   originalImage: null,
   originalImageFile: null,
   dishInfo: null,
   isRecognizing: false,
-  removedBgImage: null,
-  enhancedImage: null,
-  processedImage: null,
-  isProcessing: false,
-  removeBgProgress: 0,
-  enhanceProgress: 0,
-  useRemovedBg: true,
   selectedStyle: null,
   generatedBackgrounds: [],
   selectedBackground: null,
@@ -69,6 +67,10 @@ const initialState: Omit<PosterState, 'originalImageFile'> & { originalImageFile
   posterPreviewUrl: null,
   isMockMode: IS_MOCK_MODE,
   error: null,
+  // Phase 9
+  selectedPosterStyle: null,
+  generatedPosterImage: null,
+  isGeneratingPoster: false,
 };
 
 export const usePosterStore = create<PosterStore>()(
@@ -77,7 +79,7 @@ export const usePosterStore = create<PosterStore>()(
       ...initialState,
 
       setStep: (step) => set({ currentStep: step }),
-      nextStep: () => set((s) => ({ currentStep: Math.min(s.currentStep + 1, 7) as StepId })),
+      nextStep: () => set((s) => ({ currentStep: Math.min(s.currentStep + 1, 5) as StepId })),
       prevStep: () => set((s) => ({ currentStep: Math.max(s.currentStep - 1, 1) as StepId })),
 
       setOriginalImage: (image, file) => set({ originalImage: image, originalImageFile: file }),
@@ -86,19 +88,9 @@ export const usePosterStore = create<PosterStore>()(
       setDishInfo: (info) => set({ dishInfo: info }),
       setIsRecognizing: (v) => set({ isRecognizing: v }),
 
-      setRemovedBgImage: (image) => set({ removedBgImage: image }),
-      setEnhancedImage: (image) => set({ enhancedImage: image }),
-      setProcessedImage: (image) => set({ processedImage: image }),
-      setIsProcessing: (v) => set({ isProcessing: v }),
-      setRemoveBgProgress: (v) => set({ removeBgProgress: v }),
-      setEnhanceProgress: (v) =>
-        set((s) => ({ enhanceProgress: typeof v === 'function' ? v(s.enhanceProgress) : v })),
-      setUseRemovedBg: (v) => set({ useRemovedBg: v }),
-
-      setSelectedStyle: (style) => set({ selectedStyle: style }),
-      setGeneratedBackgrounds: (bgs) => set({ generatedBackgrounds: bgs }),
-      setSelectedBackground: (bg) => set({ selectedBackground: bg }),
-      setIsGeneratingBackground: (v) => set({ isGeneratingBackground: v }),
+      setSelectedPosterStyle: (style) => set({ selectedPosterStyle: style }),
+      setGeneratedPosterImage: (img) => set({ generatedPosterImage: img }),
+      setIsGeneratingPoster: (v) => set({ isGeneratingPoster: v }),
 
       setGeneratedCopySets: (sets) => set({ generatedCopySets: sets }),
       setSelectedCopy: (copy) => set({ selectedCopy: copy }),
@@ -122,13 +114,8 @@ export const usePosterStore = create<PosterStore>()(
         currentStep:          state.currentStep,
         originalImage:        state.originalImage,
         dishInfo:             state.dishInfo,
-        removedBgImage:       state.removedBgImage,
-        enhancedImage:        state.enhancedImage,
-        processedImage:       state.processedImage,
-        useRemovedBg:         state.useRemovedBg,
-        selectedStyle:        state.selectedStyle,
-        generatedBackgrounds: state.generatedBackgrounds,
-        selectedBackground:   state.selectedBackground,
+        selectedPosterStyle:  state.selectedPosterStyle,
+        generatedPosterImage: state.generatedPosterImage,
         generatedCopySets:    state.generatedCopySets,
         selectedCopy:         state.selectedCopy,
         posterElements:       state.posterElements,

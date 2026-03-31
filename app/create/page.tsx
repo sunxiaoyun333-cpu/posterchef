@@ -15,15 +15,12 @@ import ErrorBoundary from '@/components/ui/ErrorBoundary';
 const STEP_LABELS = [
   '上传照片',
   'AI 识别',
-  '智能抠图',
-  '选择风格',
-  '生成文案',
-  '编辑海报',
+  '生成海报',
+  '精细编辑',
   '导出',
 ];
 
-// 步骤 6、7 需要全高，不带内边距
-const FULLSCREEN_STEPS: number[] = [6, 7];
+const FULLSCREEN_STEPS: number[] = [4, 5];
 
 const fadeVariants = {
   hidden:  { opacity: 0, y: 10 },
@@ -33,7 +30,7 @@ const fadeVariants = {
 
 export default function CreatePage() {
   const { currentStep } = usePosterStore();
-  useNetworkStatus();  // 网络断开/恢复 Toast
+  useNetworkStatus();
   const isFullscreen = FULLSCREEN_STEPS.includes(currentStep);
 
   return (
@@ -78,10 +75,9 @@ export default function CreatePage() {
       }`}>
         <ErrorBoundary>
           {isFullscreen ? (
-            // 全屏步骤不需要动画包裹（避免 overflow 问题）
             <>
-              {currentStep === 6 && <StepEditor />}
-              {currentStep === 7 && <StepExport />}
+              {currentStep === 4 && <StepEditor />}
+              {currentStep === 5 && <StepExport />}
             </>
           ) : (
             <AnimatePresence mode="wait">
@@ -95,7 +91,7 @@ export default function CreatePage() {
               >
                 {currentStep === 1 && <StepUpload />}
                 {currentStep === 2 && <StepRecognize />}
-                {(currentStep === 3 || currentStep === 4 || currentStep === 5) && <StepGenerate />}
+                {currentStep === 3 && <StepGenerate />}
               </motion.div>
             </AnimatePresence>
           )}

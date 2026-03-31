@@ -33,34 +33,20 @@ export interface RawDishApiResponse {
   confidence: number;
 }
 
-// ---------- 海报风格模板 ----------
+// ---------- 海报风格（Phase 9 新版）----------
 export type StyleId =
-  | 'chinese-red'
-  | 'modern-dark'
-  | 'fresh-green'
-  | 'warm-orange'
-  | 'elegant-black'
-  | 'festive-gold'
-  | 'minimalist-white'
-  | 'street-food';
+  | 'modern-minimalist'
+  | 'rustic-farmhouse'
+  | 'elegant-fine-dining'
+  | 'bright-cafe'
+  | 'vintage-chalkboard'
+  | 'bold-pop';
 
-export interface StyleTemplate {
-  id: StyleId;
-  name: string;         // 风格名称（中文）
-  nameEn: string;       // 风格名称（英文）
-  description: string;  // 风格描述
-  primaryColor: string; // 主色调（hex）
-  accentColor: string;  // 强调色（hex）
-  bgPrompt: string;     // 用于生成背景的 prompt 关键词
-  fontStyle: 'serif' | 'sans' | 'display';
-  mood: string;         // 氛围关键词（用于 AI 生成）
-}
-
-// ---------- AI 生成的背景图 ----------
+// ---------- AI 生成的背景图（兼容旧字段，Phase 9 不再使用）----------
 export interface BackgroundOption {
   id: string;
-  url: string;           // base64 或 blob URL
-  prompt: string;        // 生成此图使用的 prompt
+  url: string;
+  prompt: string;
   style: StyleId;
 }
 
@@ -68,13 +54,13 @@ export interface BackgroundOption {
 export interface CopySet {
   id: string;
   style: 'professional' | 'casual' | 'poetic';
-  headline: string;        // 主标题（中文）
-  headlineEn: string;      // 主标题（英文）
-  subheadline: string;     // 副标题（中文）
-  subheadlineEn: string;   // 副标题（英文）
-  tagline: string;         // slogan（中文）
-  taglineEn: string;       // slogan（英文）
-  price?: string;          // 价格文本（可选）
+  headline: string;
+  headlineEn: string;
+  subheadline: string;
+  subheadlineEn: string;
+  tagline: string;
+  taglineEn: string;
+  price?: string;
 }
 
 // ---------- 海报画布元素 ----------
@@ -85,50 +71,39 @@ export interface PosterElement {
   type: ElementType;
   visible: boolean;
   locked: boolean;
-  // Fabric.js 对象由 canvas 管理，这里只存 metadata
   fabricId?: string;
 }
 
 // ---------- 全局流程状态 ----------
-export type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type StepId = 1 | 2 | 3 | 4 | 5;
 
 export interface PosterState {
-  // 流程步骤
   currentStep: StepId;
 
   // Step 1: 上传
-  originalImage: string | null;       // 原始图片（base64 / blob URL）
+  originalImage: string | null;
   originalImageFile: File | null;
 
   // Step 2: 识别结果
   dishInfo: DishInfo | null;
   isRecognizing: boolean;
 
-  // Step 3: 抠图 + 增强
-  removedBgImage: string | null;      // 透明背景 PNG（data URL）
-  enhancedImage: string | null;       // 增强后的原图（data URL）
-  processedImage: string | null;      // 用户最终选择的图片（传入海报合成）
-  isProcessing: boolean;              // 抠图/增强进行中
-  removeBgProgress: number;           // 抠图进度 0-100
-  enhanceProgress: number;            // 增强进度 0-100
-  useRemovedBg: boolean;              // true=用抠图, false=用原图
-
-  // Step 4: 风格 & 背景
+  // Step 3: 风格选择 + AI 生图 (Phase 9)
   selectedStyle: StyleId | null;
   generatedBackgrounds: BackgroundOption[];
   selectedBackground: BackgroundOption | null;
   isGeneratingBackground: boolean;
 
-  // Step 5: 文案
+  // Step 4: 文案 + 编辑
   generatedCopySets: CopySet[];
   selectedCopy: CopySet | null;
   isGeneratingCopy: boolean;
 
-  // Step 6: 编辑器
+  // 编辑器
   posterElements: PosterElement[];
   canvasWidth: number;
   canvasHeight: number;
-  posterPreviewUrl: string | null;   // Step 6 导出的预览截图，供 Step 7 展示
+  posterPreviewUrl: string | null;
 
   // 全局
   isMockMode: boolean;
@@ -152,4 +127,33 @@ export interface BackgroundResponse {
 
 export interface CopyResponse {
   copySets: CopySet[];
+}
+
+// ---------- Phase 9: 一键生成海报 API ----------
+export interface GeneratePosterRequest {
+  imageBase64: string;
+  mimeType: string;
+  styleId: StyleId;
+}
+
+export interface GeneratePosterResponse {
+  posterImageBase64: string;   // AI 生成的完整海报底图
+  dishInfo: DishInfo;          // 识别出的菜品信息
+  copySets: GeneratedCopyV2[]; // 3 套营销文案
+}
+
+export interface GeneratedCopyV2 {
+  style: 'formal' | 'casual' | 'promo';
+  style_label: string;
+  main_title: string;
+  main_title_en: string;
+  sub_title: string;
+  sub_title_en: string;
+  description: string;
+  description_en: string;
+  price: string;
+  promo_tag: string;
+  promo_tag_en: string;
+  spice_level: string;
+  allergens: string;
 }
