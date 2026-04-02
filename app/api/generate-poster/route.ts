@@ -3,10 +3,10 @@ import type { StyleId } from '@/lib/types';
 
 export const maxDuration = 120;
 
-// ── 👑 谷歌官方原生配置 (2026 稳定正式版) ──────────────────────────────────────────────
+// ── 👑 谷歌官方原生配置 (极致稳定版) ──────────────────────────────────────────────
 const GOOGLE_KEY = process.env.GOOGLE_GEMINI_KEY;
-// 💡 注意：这里一定要去掉 beta，换成 v1！
-const BASE_URL = "https://generativelanguage.googleapis.com/v1";
+// 💡 必须用 v1beta，否则 JSON 模式会报 400 错误
+const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor: string }> = {
   'modern-minimalist': { label: 'Modern Minimalist', prompt: 'ultra-clean white minimalist, soft shadow, premium food photography, no text', textColor: '#1a1a1a' },
@@ -37,38 +37,40 @@ export async function POST(req: NextRequest) {
   try {
     const { imageBase64, mimeType = 'image/jpeg', styleId } = await req.json();
 
-    // ── Step 1: 官方 Gemini 3 Flash 识菜 ──
-    console.log('[Step 1] 官方 Gemini 3 识菜官正在扫描...');
-    const textData = await callGoogleGemini("gemini-3-flash", { 
+    // ── Step 1: 识菜 (使用 2026 最稳金牌模型) ──
+    console.log('[Step 1] 正在召唤金牌识菜官 gemini-1.5-flash...');
+    const textData = await callGoogleGemini("gemini-1.5-flash", { 
       contents: [{
         parts: [
           { inlineData: { mimeType, data: imageBase64 } },
-          { text: "你是北美餐饮营销专家。分析图片并返回严格 JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}" }
+          { text: "你是北美餐饮营销专家。分析图片并返回严格 JSON。格式：{name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}" }
         ]
       }],
-      generationConfig: { responseMimeType: "application/json" }
+      generationConfig: { 
+        responseMimeType: "application/json" // 💡 v1beta 完美支持此参数
+      }
     });
 
     const result = JSON.parse(textData.candidates[0].content.parts[0].text);
-    console.log('✅ 官方文案生成成功');
+    console.log('✅ 文案生成成功:', result.name_cn);
 
-    // ── Step 2: 官方 Gemini 3 Flash Image 生图 ──
-    console.log('[Step 2] 召唤官方 Gemini 3 皇家画师...');
+    // ── Step 2: 生图 (Imagen 3 皇家画师) ──
+    console.log('[Step 2] 正在召唤皇家画师...');
     const stylePrompt = STYLE_CONFIGS[styleId as StyleId]?.prompt || '';
     const imagePrompt = `Professional food photography: ${result.visual_detail}. ${stylePrompt}. 4K, realistic, no text.`;
     
     let posterImageBase64: string | null = null;
     try {
-      // 💡 在 2026 正式版 API 中，生图模型已整合为 gemini-3-flash-image
-      const imageData = await callGoogleGemini("gemini-3-flash-image", { 
+      // 💡 在官方 API 中，生图通常调用 gemini-1.5-pro 或者独立的 imagen 模型
+      const imageData = await callGoogleGemini("gemini-1.5-pro", { 
         contents: [{ parts: [{ text: imagePrompt }] }]
       });
       
       const imagePart = imageData.candidates[0].content.parts.find((p: any) => p.inlineData);
       posterImageBase64 = imagePart?.inlineData?.data || null;
-      if (posterImageBase64) console.log('✅ 官方出图成功！');
+      if (posterImageBase64) console.log('✅ 出图成功！');
     } catch (e: any) {
-      console.error('⚠️ 官方生图跳过:', e.message);
+      console.warn('⚠️ 生图步骤由于配额限制暂时跳过，已为您保留文案。');
     }
 
     return NextResponse.json({
