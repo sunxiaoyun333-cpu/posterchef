@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     // ── Step 1: 官方 Gemini 3.1 Flash 识菜 ──
     console.log('[Step 1] 官方画师正在识菜...');
-    const textData = await callGoogleGemini("gemini-1.5-flash", { // 官方免费额度最稳的是 1.5-flash
+    const textData = await callGoogleGemini("gemini-3.1-flash", { // 官方免费额度最稳的是 1.5-flash
       contents: [{
         parts: [
           { inlineData: { mimeType, data: imageBase64 } },
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     let posterImageBase64: string | null = null;
     try {
       // 注意：官方生图模型名字可能是 imagen-3 或最新的 gemini-3-pro-image-preview
-      const imageData = await callGoogleGemini("gemini-1.5-pro", { // 或者你的 Key 权限内的生图模型
+      const imageData = await callGoogleGemini("gemini-3.1-pro", { // 或者你的 Key 权限内的生图模型
         contents: [{ parts: [{ text: imagePrompt }] }]
       });
       
