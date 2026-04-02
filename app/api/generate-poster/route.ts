@@ -3,11 +3,10 @@ import type { StyleId } from '@/lib/types';
 
 export const maxDuration = 120;
 
-// ── 👑 谷歌官方原生配置 ──────────────────────────────────────────────────────
-// 👑 谷歌官方原生配置
-const BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
-// 💡 永远使用环境变量，不要把真正的 Key 写在这里！
+// ── 👑 谷歌官方原生配置 (2026 稳定正式版) ──────────────────────────────────────────────
 const GOOGLE_KEY = process.env.GOOGLE_GEMINI_KEY;
+// 💡 注意：这里一定要去掉 beta，换成 v1！
+const BASE_URL = "https://generativelanguage.googleapis.com/v1";
 
 const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor: string }> = {
   'modern-minimalist': { label: 'Modern Minimalist', prompt: 'ultra-clean white minimalist, soft shadow, premium food photography, no text', textColor: '#1a1a1a' },
@@ -18,7 +17,6 @@ const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor:
   'bold-pop': { label: 'Bold Pop', prompt: 'bold vibrant pop art, graphic design style, bright complementary colors, no text', textColor: '#ffffff' },
 };
 
-// 🛡️ 官方原生调用函数
 async function callGoogleGemini(model: string, payload: any) {
   const url = `${BASE_URL}/models/${model}:generateContent?key=${GOOGLE_KEY}`;
   
@@ -39,30 +37,30 @@ export async function POST(req: NextRequest) {
   try {
     const { imageBase64, mimeType = 'image/jpeg', styleId } = await req.json();
 
-    // ── Step 1: 官方 Gemini 3.1 Flash 识菜 ──
-    console.log('[Step 1] 官方画师正在识菜...');
-    const textData = await callGoogleGemini("gemini-3.1-flash", { // 官方免费额度最稳的是 1.5-flash
+    // ── Step 1: 官方 Gemini 3 Flash 识菜 ──
+    console.log('[Step 1] 官方 Gemini 3 识菜官正在扫描...');
+    const textData = await callGoogleGemini("gemini-3-flash", { 
       contents: [{
         parts: [
           { inlineData: { mimeType, data: imageBase64 } },
-          { text: "你是北美餐饮营销专家。分析图片并返回JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}" }
+          { text: "你是北美餐饮营销专家。分析图片并返回严格 JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}" }
         ]
       }],
-      generationConfig: { responseMimeType: "application/json" } // 官方强制 JSON 模式，绝不报错
+      generationConfig: { responseMimeType: "application/json" }
     });
 
     const result = JSON.parse(textData.candidates[0].content.parts[0].text);
     console.log('✅ 官方文案生成成功');
 
-    // ── Step 2: 官方 Gemini 3.1 生图 ──
-    console.log('[Step 2] 召唤官方皇家画师...');
+    // ── Step 2: 官方 Gemini 3 Flash Image 生图 ──
+    console.log('[Step 2] 召唤官方 Gemini 3 皇家画师...');
     const stylePrompt = STYLE_CONFIGS[styleId as StyleId]?.prompt || '';
     const imagePrompt = `Professional food photography: ${result.visual_detail}. ${stylePrompt}. 4K, realistic, no text.`;
     
     let posterImageBase64: string | null = null;
     try {
-      // 注意：官方生图模型名字可能是 imagen-3 或最新的 gemini-3-pro-image-preview
-      const imageData = await callGoogleGemini("gemini-3.1-pro", { // 或者你的 Key 权限内的生图模型
+      // 💡 在 2026 正式版 API 中，生图模型已整合为 gemini-3-flash-image
+      const imageData = await callGoogleGemini("gemini-3-flash-image", { 
         contents: [{ parts: [{ text: imagePrompt }] }]
       });
       
@@ -70,7 +68,7 @@ export async function POST(req: NextRequest) {
       posterImageBase64 = imagePart?.inlineData?.data || null;
       if (posterImageBase64) console.log('✅ 官方出图成功！');
     } catch (e: any) {
-      console.error('⚠️ 官方生图由于配额或网络波动跳过:', e.message);
+      console.error('⚠️ 官方生图跳过:', e.message);
     }
 
     return NextResponse.json({
