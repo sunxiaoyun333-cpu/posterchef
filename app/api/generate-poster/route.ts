@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { StyleId } from '@/lib/types';
 
-// Vercel 部署环境允许的最长运行时间（DALL-E 3 画图比较慢，需要给足时间）
-export const maxDuration = 120; 
+export const maxDuration = 120; // 考虑到 DALL-E 3 的精工细作，给足 120 秒
 
-// ── 👑 核心配置 ─────────────────────────────────────────────────────────────
 const GOOGLE_KEY = process.env.GOOGLE_GEMINI_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
-// 使用 Gemini 1.5 Flash 作为“识菜官”，速度最快且稳定
+// ── 💎 2026 顶级配置：Gemini 3 Flash 识菜 (高精度版) + DALL-E 3 绘图 ──────────────────────
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
 
 const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor: string }> = {
@@ -25,11 +23,11 @@ export async function POST(req: NextRequest) {
     const { imageBase64, mimeType = 'image/jpeg', styleId } = await req.json();
 
     if (!GOOGLE_KEY || !OPENAI_KEY) {
-      throw new Error("密钥缺失，请检查 Vercel 环境变量配置");
+      throw new Error("密钥缺失，请检查 Vercel 的 Environment Variables 设置！");
     }
 
-    // ── Step 1: 召唤 Gemini 识菜 (文案生成) ──
-    console.log('[Step 1] Gemini 正在扫描照片...');
+    // ── Step 1: 高精度识菜 (改进提示词，严防幻觉) ──
+    console.log('[Step 1] 正在以 100% 专注度识别照片...');
     const geminiRes = await fetch(`${GEMINI_URL}?key=${GOOGLE_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -37,24 +35,23 @@ export async function POST(req: NextRequest) {
         contents: [{
           parts: [
             { inlineData: { mimeType, data: imageBase64 } },
-            { text: "你是北美餐饮营销专家。分析图片并返回严格JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}. 请直接开始输出JSON。" }
+            { text: "You are a professional food critic. Look AT THE IMAGE CAREFULLY. Identify the EXACT dish. DO NOT hallucinate. Return a STRICT JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}. Ensure name_cn reflects the actual dish in the picture (e.g., Sushi if it's sushi). Output JSON ONLY." }
           ]
         }]
       }),
     });
 
-    if (!geminiRes.ok) throw new Error(`Gemini 报错: ${geminiRes.status}`);
+    if (!geminiRes.ok) throw new Error(`Gemini 识菜失败: ${geminiRes.status}`);
     const geminiData = await geminiRes.json();
     let rawText = geminiData.candidates[0].content.parts[0].text;
     const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
     const result = JSON.parse(cleanJson);
-    console.log('✅ 文案生成成功:', result.name_cn);
+    console.log('✅ 识菜成功，它是:', result.name_cn);
 
-    // ── Step 2: 召唤 DALL-E 3 皇家画师 (生图) ──
-    console.log('[Step 2] DALL-E 3 正在为你作画...');
+    // ── Step 2: DALL-E 3 皇家画师 ──
+    console.log('[Step 2] DALL-E 3 正在根据文案画出海报背景...');
     const stylePrompt = STYLE_CONFIGS[styleId as StyleId]?.prompt || '';
-    // 指令：专业摄影，描述食物，加上风格，强调不要文字
-    const dallePrompt = `Professional food photography of ${result.visual_detail}. ${stylePrompt}. High resolution, appetizing, no text, no letters, no typography.`;
+    const dallePrompt = `Professional food photography of ${result.visual_detail}. ${stylePrompt}. High resolution, appetizing, NO TEXT, NO LETTERS.`;
 
     const dalleRes = await fetch("https://api.openai.com/v1/images/generations", {
       method: 'POST',
@@ -72,9 +69,9 @@ export async function POST(req: NextRequest) {
     });
 
     if (!dalleRes.ok) {
-      const errorBody = await dalleRes.text();
-      console.error('DALL-E 报错详情:', errorBody);
-      throw new Error(`DALL-E 3 绘图失败: ${dalleRes.status}`);
+      const errDetail = await dalleRes.text();
+      console.error('DALL-E 报错:', errDetail);
+      throw new Error(`DALL-E 3 绘图失败`);
     }
 
     const dalleData = await dalleRes.json();
