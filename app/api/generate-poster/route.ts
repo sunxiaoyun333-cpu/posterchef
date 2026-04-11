@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { StyleId } from '@/lib/types';
 
-export const maxDuration = 120; // 保证生图不超时
+export const maxDuration = 120;
 
-// ── 👑 核心配置 (仅需 OpenAI 钥匙) ─────────────────────────────────────────────
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor: string }> = {
@@ -23,7 +22,7 @@ export async function POST(req: NextRequest) {
       throw new Error("密钥缺失，请检查 Vercel 环境变量 OPENAI_API_KEY");
     }
 
-    // ── Step 1: GPT-4o 视觉识别 (顶替 Gemini) ──
+    // ── Step 1: GPT-4o 视觉识别 ──
     console.log('[Step 1] GPT-4o 识菜官正在扫描照片...');
     const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: 'POST',
@@ -37,7 +36,7 @@ export async function POST(req: NextRequest) {
           {
             role: "user",
             content: [
-              { type: "text", text: "Identify the EXACT dish in this image. Return STRICT JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}. Output JSON ONLY." },
+              { type: "text", text: "Identify the EXACT dish. Return STRICT JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}. Output JSON ONLY." },
               { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
             ]
           }
@@ -48,15 +47,34 @@ export async function POST(req: NextRequest) {
 
     if (!visionRes.ok) {
       const err = await visionRes.text();
-      throw new Error(`GPT-4o 识别失败: ${visionRes.status} - ${err}`);
+      throw new Error(`GPT-4o 识别失败: ${visionRes.status}`);
     }
 
     const visionData = await visionRes.json();
-    const result = JSON.parse(visionData.choices[0].message.content);
-    console.log('✅ 识菜成功，它是:', result.name_cn);
+    const rawContent = visionData.choices?.[0]?.message?.content;
 
-    // ── Step 2: DALL-E 3 绘图 (保持不变) ──
-    console.log('[Step 2] DALL-E 3 皇家画师正在作画...');
+    if (!rawContent) {
+      console.error('❌ AI 返回内容为空:', JSON.stringify(visionData));
+      throw new Error("AI 识菜官开小差了，返回内容为空，请重试照片。");
+    }
+
+    // ── 🛡️ 安全解析 JSON ──
+    let result;
+    try {
+      result = JSON.parse(rawContent.replace(/```json/g, '').replace(/```/g, '').trim());
+    } catch (e) {
+      throw new Error("AI 返回的数据格式不正确，无法解析。");
+    }
+
+    // 检查核心字段是否存在，防止 null 报错
+    if (!result || !result.name_cn) {
+      throw new Error("AI 没能识别出菜名，请尝试更清晰的照片。");
+    }
+
+    console.log('✅ 识菜成功:', result.name_cn);
+
+    // ── Step 2: DALL-E 3 绘图 ──
+    console.log('[Step 2] DALL-E 3 正在作画...');
     const stylePrompt = STYLE_CONFIGS[styleId as StyleId]?.prompt || '';
     const dallePrompt = `Professional food photography of ${result.visual_detail}. ${stylePrompt}. High resolution, appetizing, NO TEXT, NO LETTERS.`;
 
@@ -75,14 +93,14 @@ export async function POST(req: NextRequest) {
       }),
     });
 
+    const dalleData = await dalleRes.json();
+    
     if (!dalleRes.ok) {
-      const err = await dalleRes.text();
-      throw new Error(`DALL-E 3 绘图失败: ${dalleRes.status} - ${err}`);
+      console.error('DALL-E 报错:', dalleData);
+      throw new Error(`DALL-E 3 绘图失败: ${dalleData.error?.message || dalleRes.status}`);
     }
 
-    const dalleData = await dalleRes.json();
     const posterImageBase64 = dalleData.data[0].b64_json;
-    console.log('✅ 全线 OpenAI 流程跑通！');
 
     return NextResponse.json({
       success: true,
@@ -97,6 +115,7 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('❌ 彻底失败:', err.message);
+    // 将具体的错误消息返回给前端显示，而不是报 null
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
