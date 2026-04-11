@@ -7,7 +7,7 @@ const GOOGLE_KEY = process.env.GOOGLE_GEMINI_KEY;
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 // ── 💎 2026 顶级配置：Gemini 3 Flash 识菜 (高精度版) + DALL-E 3 绘图 ──────────────────────
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor: string }> = {
   'modern-minimalist': { label: 'Modern Minimalist', prompt: 'ultra-clean white minimalist, soft shadow, premium food photography, 4k', textColor: '#1a1a1a' },
