@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { StyleId } from '@/lib/types';
 
-export const maxDuration = 120; // 考虑到 DALL-E 3 的精工细作，给足 120 秒
+export const maxDuration = 120; // 保证生图不超时
 
-const GOOGLE_KEY = process.env.GOOGLE_GEMINI_KEY;
+// ── 👑 核心配置 (仅需 OpenAI 钥匙) ─────────────────────────────────────────────
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
-
-// ── 💎 2026 顶级配置：Gemini 3 Flash 识菜 (高精度版) + DALL-E 3 绘图 ──────────────────────
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 const STYLE_CONFIGS: Record<StyleId, { label: string; prompt: string; textColor: string }> = {
   'modern-minimalist': { label: 'Modern Minimalist', prompt: 'ultra-clean white minimalist, soft shadow, premium food photography, 4k', textColor: '#1a1a1a' },
@@ -22,34 +19,44 @@ export async function POST(req: NextRequest) {
   try {
     const { imageBase64, mimeType = 'image/jpeg', styleId } = await req.json();
 
-    if (!GOOGLE_KEY || !OPENAI_KEY) {
-      throw new Error("密钥缺失，请检查 Vercel 的 Environment Variables 设置！");
+    if (!OPENAI_KEY) {
+      throw new Error("密钥缺失，请检查 Vercel 环境变量 OPENAI_API_KEY");
     }
 
-    // ── Step 1: 高精度识菜 (改进提示词，严防幻觉) ──
-    console.log('[Step 1] 正在以 100% 专注度识别照片...');
-    const geminiRes = await fetch(`${GEMINI_URL}?key=${GOOGLE_KEY}`, {
+    // ── Step 1: GPT-4o 视觉识别 (顶替 Gemini) ──
+    console.log('[Step 1] GPT-4o 识菜官正在扫描照片...');
+    const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_KEY}`
+      },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { inlineData: { mimeType, data: imageBase64 } },
-            { text: "You are a professional food critic. Look AT THE IMAGE CAREFULLY. Identify the EXACT dish. DO NOT hallucinate. Return a STRICT JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}. Ensure name_cn reflects the actual dish in the picture (e.g., Sushi if it's sushi). Output JSON ONLY." }
-          ]
-        }]
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Identify the EXACT dish in this image. Return STRICT JSON: {name_cn, name_en, ingredients: [], spice_level, allergens: [], visual_detail, copySets: [{style_label, main_title, sub_title, description, price, promo_tag}]}. Output JSON ONLY." },
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+            ]
+          }
+        ],
+        response_format: { type: "json_object" }
       }),
     });
 
-    if (!geminiRes.ok) throw new Error(`Gemini 识菜失败: ${geminiRes.status}`);
-    const geminiData = await geminiRes.json();
-    let rawText = geminiData.candidates[0].content.parts[0].text;
-    const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const result = JSON.parse(cleanJson);
+    if (!visionRes.ok) {
+      const err = await visionRes.text();
+      throw new Error(`GPT-4o 识别失败: ${visionRes.status} - ${err}`);
+    }
+
+    const visionData = await visionRes.json();
+    const result = JSON.parse(visionData.choices[0].message.content);
     console.log('✅ 识菜成功，它是:', result.name_cn);
 
-    // ── Step 2: DALL-E 3 皇家画师 ──
-    console.log('[Step 2] DALL-E 3 正在根据文案画出海报背景...');
+    // ── Step 2: DALL-E 3 绘图 (保持不变) ──
+    console.log('[Step 2] DALL-E 3 皇家画师正在作画...');
     const stylePrompt = STYLE_CONFIGS[styleId as StyleId]?.prompt || '';
     const dallePrompt = `Professional food photography of ${result.visual_detail}. ${stylePrompt}. High resolution, appetizing, NO TEXT, NO LETTERS.`;
 
@@ -69,14 +76,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (!dalleRes.ok) {
-      const errDetail = await dalleRes.text();
-      console.error('DALL-E 报错:', errDetail);
-      throw new Error(`DALL-E 3 绘图失败`);
+      const err = await dalleRes.text();
+      throw new Error(`DALL-E 3 绘图失败: ${dalleRes.status} - ${err}`);
     }
 
     const dalleData = await dalleRes.json();
     const posterImageBase64 = dalleData.data[0].b64_json;
-    console.log('✅ DALL-E 3 出图成功！');
+    console.log('✅ 全线 OpenAI 流程跑通！');
 
     return NextResponse.json({
       success: true,
@@ -90,7 +96,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (err: any) {
-    console.error('❌ 执行失败:', err.message);
+    console.error('❌ 彻底失败:', err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
