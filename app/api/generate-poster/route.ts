@@ -19,11 +19,11 @@ export async function POST(req: NextRequest) {
     const { imageBase64, mimeType = 'image/jpeg', styleId } = await req.json();
 
     if (!OPENAI_KEY) {
-      throw new Error("密钥缺失，请检查 Vercel 环境变量 OPENAI_API_KEY");
+      throw new Error("密钥缺失，请检查 Vercel 环境变量 OPENAI_API_KEY。");
     }
 
-    // ── Step 1: GPT-4o-mini 视觉识别 (更稳、更快、更便宜) ──
-    console.log('[Step 1] GPT-4o-mini 正在扫描照片...');
+    // ── Step 1: GPT-4o-mini 严谨识菜 ──
+    console.log('[Step 1] GPT-4o-mini 正在进行证据链识菜...');
     const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: 'POST',
       headers: {
@@ -31,50 +31,54 @@ export async function POST(req: NextRequest) {
         'Authorization': `Bearer ${OPENAI_KEY}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini", // 使用 mini 版提高成功率
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
-            content: "You are a specialized food recognition assistant. You must always return a valid JSON object."
+            content: "You are a strict culinary analyst. Your goal is to identify dishes based ONLY on visual evidence. Do not guess traditional Chinese dishes if the image shows Western or fusion health food."
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "Identify the dish in this image. Return a STRICT JSON object with these keys: name_cn, name_en, ingredients (array), spice_level (0-5), allergens (array), visual_detail (for DALL-E 3), copySets (array of 3 objects with style_label, main_title, sub_title, description, price, promo_tag). If you cannot identify it, return a best guess. Output JSON ONLY." },
-              { type: "image_url", image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+              { 
+                type: "text", 
+                text: `Task: 
+                1. List all visible ingredients.
+                2. Based on the ingredients, name the dish accurately (e.g., 'Salad Bowl', 'Healthy Grain Bowl', 'Sushi'). 
+                3. If it looks like a healthy bowl with mixed veggies/fruits/grains, do NOT call it Kung Pao Chicken.
+                
+                Return ONLY a JSON object: {
+                  "name_cn": "准确的中文名称",
+                  "name_en": "Accurate English Name",
+                  "ingredients": ["ingredient1", "ingredient2"],
+                  "spice_level": 0,
+                  "allergens": [],
+                  "visual_detail": "precise visual description for image generation",
+                  "copySets": [{ "style_label": "Healthy/Fresh", "main_title": "Fresh & Nutritious", "sub_title": "Energy Bowl", "description": "Taste the freshness of nature.", "price": "", "promo_tag": "New" }]
+                }` 
+              },
+              { 
+                type: "image_url", 
+                image_url: { url: `data:${mimeType};base64,${imageBase64}` } 
+              }
             ]
           }
         ],
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        temperature: 0 // 降到 0，彻底封杀“瞎想”的空间
       }),
     });
 
     const visionData = await visionRes.json();
+    if (!visionRes.ok) throw new Error(visionData.error?.message || "识菜失败");
 
-    if (!visionRes.ok) {
-      console.error('OpenAI API Error:', visionData);
-      throw new Error(`GPT 报错: ${visionData.error?.message || visionRes.status}`);
-    }
+    const result = JSON.parse(visionData.choices[0].message.content);
+    console.log('✅ 识菜完成（证据确凿）:', result.name_cn);
 
-    // 处理拒答或空内容
-    const rawContent = visionData.choices?.[0]?.message?.content;
-    const refusal = visionData.choices?.[0]?.refusal;
-
-    if (refusal) {
-      throw new Error(`AI 拒绝识别这张照片: ${refusal}`);
-    }
-
-    if (!rawContent || rawContent === "null") {
-      throw new Error("AI 无法解析这张照片的内容，请换个角度或更清晰的照片重试。");
-    }
-
-    const result = JSON.parse(rawContent);
-    console.log('✅ 识菜成功:', result.name_cn);
-
-    // ── Step 2: DALL-E 3 绘图 ──
-    console.log('[Step 2] DALL-E 3 正在作画...');
+    // ── Step 2: DALL-E 3 绘图 (基于准确的描述) ──
+    console.log('[Step 2] DALL-E 3 皇家画师出场...');
     const stylePrompt = STYLE_CONFIGS[styleId as StyleId]?.prompt || '';
-    const dallePrompt = `Professional food photography of ${result.visual_detail}. ${stylePrompt}. High resolution, appetizing, NO TEXT, NO LETTERS.`;
+    const dallePrompt = `Professional food photography of ${result.visual_detail}. ${stylePrompt}. High resolution, appetizing, no text.`;
 
     const dalleRes = await fetch("https://api.openai.com/v1/images/generations", {
       method: 'POST',
@@ -92,10 +96,7 @@ export async function POST(req: NextRequest) {
     });
 
     const dalleData = await dalleRes.json();
-    
-    if (!dalleRes.ok) {
-      throw new Error(`DALL-E 3 绘图失败: ${dalleData.error?.message || '未知错误'}`);
-    }
+    if (!dalleRes.ok) throw new Error(dalleData.error?.message || "绘图失败");
 
     const posterImageBase64 = dalleData.data[0].b64_json;
 
@@ -104,14 +105,13 @@ export async function POST(req: NextRequest) {
       data: {
         ...result,
         posterImageBase64,
-        usedFallback: false,
         styleLabel: STYLE_CONFIGS[styleId as StyleId]?.label,
         textColor: STYLE_CONFIGS[styleId as StyleId]?.textColor,
       },
     });
 
   } catch (err: any) {
-    console.error('❌ 执行失败详情:', err.message);
+    console.error('❌ Error:', err.message);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
