@@ -69,13 +69,13 @@ async function checkModels() {
     
     if (flashModels.length > 0) {
       console.log(`💡 [Flash 模型] 已检测到 ${flashModels.length} 个 Flash 模型`);
-      flashModels.forEach(m => console.log(`   - ${m.name}`));
+      flashModels.forEach((m: { name: string }) => console.log(`   - ${m.name}`));
       console.log();
     }
     
     if (imagenModels.length > 0) {
       console.log(`🎨 [Imagen 模型] 已检测到 ${imagenModels.length} 个 Imagen 模型`);
-      imagenModels.forEach(m => console.log(`   - ${m.name}`));
+      imagenModels.forEach((m: { name: string }) => console.log(`   - ${m.name}`));
       console.log();
     }
     

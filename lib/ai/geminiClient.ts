@@ -6,7 +6,11 @@ function getGenAI(): GoogleGenerativeAI {
     throw new Error('GEMINI_API_KEY 未配置');
   }
   const baseUrl = process.env.GEMINI_BASE_URL;
-  return new GoogleGenerativeAI(key, baseUrl ? { baseUrl } : undefined);
+  if (baseUrl) {
+    type GenAIWithBase = new (apiKey: string, opts?: { baseUrl: string }) => GoogleGenerativeAI;
+    return new (GoogleGenerativeAI as unknown as GenAIWithBase)(key, { baseUrl });
+  }
+  return new GoogleGenerativeAI(key);
 }
 
 /** 菜品识别 + 文案生成（多模态视觉 + 文本） */

@@ -4,7 +4,7 @@ import {
   useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle,
 } from 'react';
 import {
-  Canvas, FabricImage, Textbox, Rect, Group, Line,
+  Canvas, FabricImage, Textbox, IText, Rect, Group, Line,
   filters as FabricFilters,
   type FabricObject,
 } from 'fabric';
@@ -16,6 +16,12 @@ import {
   type TextElementConfig,
 } from '@/lib/templates/layoutEngine';
 import type { StyleTemplate, CopySet } from '@/lib/types';
+import type { ContentStationState } from '@/components/ContentSelectionStation';
+import {
+  STATION_LINE_TAG,
+  renderStationTextLayer,
+  clearStationPreview,
+} from '@/lib/poster/renderStationTextLayer';
 
 // ── 类型 ─────────────────────────────────────────────────────────
 export interface PosterCanvasProps {
@@ -29,6 +35,11 @@ export interface PosterCanvasProps {
   style?:         StyleTemplate | null;
   copy?:          CopySet | null;
   languageMode?:  'bilingual' | 'cn_only' | 'en_only';
+  /** 分拣站实时预览（与 style/copy 二选一：有此则优先渲染分拣站文案层） */
+  stationPreview?: {
+    state: ContentStationState;
+    textColor: string;
+  } | null;
   /** 文字内容编辑完成后回调，返回 {type, text} */
   onTextEdited?:  (type: string, text: string) => void;
 }
@@ -51,22 +62,57 @@ const TEXT_LAYER_TAG = 'text_layer';
 const DIVIDER_TAG    = 'divider';
 const GUIDE_TAG      = '__guide__';
 
-// ── Google Fonts ──────────────────────────────────────────────────
+// ── Google Fonts（失败时使用系统栈，不阻塞 build）──────────────────
 const loadedFonts = new Set<string>();
+const fontLoadFailed = new Set<string>();
 
-async function ensureGoogleFont(fontStyle: StyleTemplate['fontStyle']): Promise<void> {
-  if (loadedFonts.has(fontStyle)) return;
-  loadedFonts.add(fontStyle);
+const SYSTEM_FONT_FALLBACK: Record<StyleTemplate['fontStyle'], { cn: string; en: string }> = {
+  serif: {
+    cn: 'Georgia, "Times New Roman", "Songti SC", "SimSun", serif',
+    en: 'Georgia, "Times New Roman", "Palatino Linotype", serif',
+  },
+  sans: {
+    cn: 'system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+    en: 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  },
+  display: {
+    cn: 'Impact, "Arial Black", "PingFang SC", "Microsoft YaHei", sans-serif',
+    en: 'Impact, Haettenschweiler, "Arial Narrow Bold", fantasy, sans-serif',
+  },
+};
+
+/** @returns 是否成功加载 Web Font（false 时调用方应使用 SYSTEM_FONT_FALLBACK） */
+async function ensureGoogleFont(fontStyle: StyleTemplate['fontStyle']): Promise<boolean> {
+  if (loadedFonts.has(fontStyle)) return !fontLoadFailed.has(fontStyle);
   const url = GOOGLE_FONTS_URLS[fontStyle];
-  if (!url) return;
-  const link = document.createElement('link');
-  link.rel  = 'stylesheet';
-  link.href = url;
-  document.head.appendChild(link);
-  await Promise.race([
-    document.fonts.ready,
-    new Promise<void>((r) => setTimeout(r, 3000)),
-  ]);
+  if (!url) return false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = url;
+      const t = window.setTimeout(() => reject(new Error('font css timeout')), 5000);
+      link.onload = () => {
+        window.clearTimeout(t);
+        resolve();
+      };
+      link.onerror = () => {
+        window.clearTimeout(t);
+        reject(new Error('font css error'));
+      };
+      document.head.appendChild(link);
+    });
+    await Promise.race([
+      document.fonts.ready,
+      new Promise<void>((r) => setTimeout(r, 2500)),
+    ]);
+    loadedFonts.add(fontStyle);
+    return true;
+  } catch {
+    fontLoadFailed.add(fontStyle);
+    loadedFonts.add(fontStyle);
+    return false;
+  }
 }
 
 // ── 辅助：读写 data 属性（Fabric 6 无类型） ───────────────────────
@@ -257,6 +303,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       style       = null,
       copy        = null,
       languageMode = 'bilingual',
+      stationPreview = null,
       onTextEdited,
     },
     ref,
@@ -366,7 +413,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       fc.getObjects()
         .filter((o) => {
           const tag = getData(o)?.tag;
-          return tag === TEXT_LAYER_TAG || tag === DIVIDER_TAG;
+          return tag === TEXT_LAYER_TAG || tag === DIVIDER_TAG || tag === STATION_LINE_TAG;
         })
         .forEach((o) => fc.bringObjectToFront(o));
     }
@@ -380,10 +427,35 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         .forEach((o) => fc.remove(o));
     }
 
+    // ── 分拣站预览层 ───────────────────────────────────────────────
+    const refreshStationPreview = useCallback(
+      async (fc: Canvas) => {
+        if (!stationPreview) {
+          clearStationPreview(fc);
+          return;
+        }
+        const webOk = await ensureGoogleFont('sans');
+        const fb = SYSTEM_FONT_FALLBACK.sans;
+        const fontCn = webOk ? 'Noto Sans SC' : fb.cn;
+        const fontEn = webOk ? 'Inter' : fb.en;
+        renderStationTextLayer(fc, {
+          state: stationPreview.state,
+          lw: posterWidth,
+          lh: posterHeight,
+          textColor: stationPreview.textColor,
+          fontFamilyCn: fontCn,
+          fontFamilyEn: fontEn,
+        });
+        bringTextLayerToFront(fc);
+        fc.requestRenderAll();
+      },
+      [stationPreview, posterWidth, posterHeight],
+    );
+
     // ── 渲染文字层 ───────────────────────────────────────────────
     const renderTextLayer = useCallback(async (fc: Canvas) => {
       if (!style || !copy) return;
-      await ensureGoogleFont(style.fontStyle);
+      const webOk = await ensureGoogleFont(style.fontStyle);
       clearTextLayer(fc);
 
       const divider = new Rect({
@@ -406,7 +478,15 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         canvasWidth:  posterWidth,
         canvasHeight: posterHeight,
       });
-      configs.forEach((cfg) => addTextElement(fc, cfg));
+      const fb = SYSTEM_FONT_FALLBACK[style.fontStyle];
+      configs.forEach((cfg) => {
+        const c = { ...cfg };
+        if (!webOk) {
+          const isCnSide = /Noto Serif SC|Noto Sans SC|ZCOOL|SC|KuaiLe/i.test(c.fontFamily);
+          c.fontFamily = isCnSide ? fb.cn : fb.en;
+        }
+        addTextElement(fc, c);
+      });
       bringTextLayerToFront(fc);
       fc.requestRenderAll();
     }, [style, copy, languageMode, posterWidth, posterHeight]);
@@ -437,10 +517,11 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       // --- 双击 → 进入文字编辑模式 ---
       fc.on('mouse:dblclick', ({ target }) => {
         if (!target) return;
-        if (target instanceof Textbox && target.selectable) {
+        const editable = target instanceof Textbox || target instanceof IText;
+        if (editable && target.selectable) {
           fc.setActiveObject(target);
-          target.enterEditing();
-          target.selectAll();
+          (target as Textbox).enterEditing?.();
+          (target as Textbox).selectAll?.();
           fc.requestRenderAll();
         }
       });
@@ -448,14 +529,14 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       // --- 文字编辑结束：触发回调 ---
       fc.on('text:editing:exited', ({ target }) => {
         if (!target) return;
-        const tb   = target as Textbox;
+        if (!(target instanceof Textbox || target instanceof IText)) return;
+        const tb = target as Textbox;
         const data = getData(tb as unknown as FabricObject);
         const type = data?.type ?? '';
         const text = (tb.text as string) ?? '';
         if (type && onTextEditedRef.current) {
           onTextEditedRef.current(type, text);
         }
-        // 同时确保 PropertyPanel 也能感知到（触发 object:modified）
         fc.fire('object:modified', { target: tb as unknown as FabricObject });
       });
 
@@ -465,8 +546,8 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
 
         if (e.key === 'Escape') {
           // 如果正在编辑文字，先退出编辑，再取消选中
-          if (target instanceof Textbox && (target as Textbox).isEditing) {
-            (target as Textbox).exitEditing();
+          if ((target instanceof Textbox || target instanceof IText) && (target as Textbox).isEditing) {
+            (target as Textbox).exitEditing?.();
             fc.requestRenderAll();
           } else {
             fc.discardActiveObject();
@@ -476,7 +557,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         }
 
         if ((e.key === 'Delete' || e.key === 'Backspace') && target) {
-          if (target instanceof Textbox && (target as Textbox).isEditing) return;
+          if ((target instanceof Textbox || target instanceof IText) && (target as Textbox).isEditing) return;
           fc.remove(target);
           fc.discardActiveObject();
           fc.requestRenderAll();
@@ -486,7 +567,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
 
         const isArrow = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key);
         if (!isArrow || !target) return;
-        if (target instanceof Textbox && (target as Textbox).isEditing) return;
+        if ((target instanceof Textbox || target instanceof IText) && (target as Textbox).isEditing) return;
 
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
@@ -505,9 +586,13 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       return () => window.removeEventListener('keydown', onKeyDown);
     }, [posterWidth, posterHeight]);
 
-    // ── 初始化 ───────────────────────────────────────────────────
+    // ── 初始化 Fabric（画布逻辑尺寸变化时整体重建）────────────────────
     useEffect(() => {
-      if (!canvasElRef.current || fabricRef.current) return;
+      if (!canvasElRef.current) return;
+      if (fabricRef.current) {
+        fabricRef.current.dispose();
+        fabricRef.current = null;
+      }
 
       const fz = calcFitZoom();
       setFitZoom(fz);
@@ -524,10 +609,6 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       fc.setZoom(fz);
       fabricRef.current = fc;
 
-      if (backgroundUrl) loadBackground(fc, backgroundUrl);
-      if (dishUrl)       loadDishImage(fc, dishUrl);
-      if (style && copy) renderTextLayer(fc);
-
       const cleanup = setupInteractions(fc);
 
       return () => {
@@ -535,8 +616,7 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
         fc.dispose();
         fabricRef.current = null;
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [posterWidth, posterHeight, calcFitZoom, setupInteractions]);
 
     // ── 背景图变化 ───────────────────────────────────────────────
     useEffect(() => {
@@ -560,12 +640,26 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [brightness, blur, warmth]);
 
-    // ── 文案 / 风格变化 ──────────────────────────────────────────
+    // ── 分拣站预览：整层重绘（中/英/双语 → Fabric 对象增删）──────────────
     useEffect(() => {
       const fc = fabricRef.current;
       if (!fc) return;
-      renderTextLayer(fc);
-    }, [renderTextLayer]);
+      if (!stationPreview) {
+        clearStationPreview(fc);
+        return;
+      }
+      void (async () => {
+        clearTextLayer(fc);
+        await refreshStationPreview(fc);
+      })();
+    }, [stationPreview, refreshStationPreview]);
+
+    // ── 文案 / 风格变化（无分拣站预览时）───────────────────────────────
+    useEffect(() => {
+      const fc = fabricRef.current;
+      if (!fc || stationPreview) return;
+      void renderTextLayer(fc);
+    }, [stationPreview, renderTextLayer]);
 
     // ── Window resize ────────────────────────────────────────────
     useEffect(() => {
@@ -623,9 +717,11 @@ const PosterCanvas = forwardRef<PosterCanvasHandle, PosterCanvasProps>(
       setZoom: applyZoom,
       refreshTextLayer: async () => {
         const fc = fabricRef.current;
-        if (fc) await renderTextLayer(fc);
+        if (!fc) return;
+        if (stationPreview) await refreshStationPreview(fc);
+        else await renderTextLayer(fc);
       },
-    }), [applyZoom, posterWidth, posterHeight, renderTextLayer]);
+    }), [applyZoom, posterWidth, posterHeight, renderTextLayer, stationPreview, refreshStationPreview]);
 
     const zoomPct = Math.round(zoom * 100);
 

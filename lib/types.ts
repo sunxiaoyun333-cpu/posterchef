@@ -50,6 +50,54 @@ export interface BackgroundOption {
   style: StyleId;
 }
 
+/** 旧版画布 / layoutEngine 用的风格模板（与 STYLE_TEMPLATES 对应） */
+export type TemplateFontStyle = 'serif' | 'sans' | 'display';
+
+export interface StyleTemplate {
+  id: string;
+  name: string;
+  nameEn: string;
+  description: string;
+  primaryColor: string;
+  accentColor: string;
+  bgPrompt: string;
+  fontStyle: TemplateFontStyle;
+  mood: string;
+}
+
+// ---------- 内容分拣站 & AI 双场景海报文案 ----------
+export type SceneMode = 'social' | 'offline' | 'clean' | 'diy';
+export type LanguageMode = 'cn' | 'en' | 'both';
+
+export interface MarketingCopy {
+  cn: string;
+  en: string;
+}
+
+/** social / offline 各一套；extra_text 在社交媒体侧重 Vibe，在线下侧重 Highlights */
+export interface PosterScheme {
+  main_title: MarketingCopy;
+  sub_title: MarketingCopy;
+  extra_text?: MarketingCopy;
+}
+
+/** 识图 + 生图侧与分拣站共用的结构化海报文案 */
+export interface PosterData {
+  name_cn: string;
+  name_en: string;
+  /** AI 原始生图描述（识图阶段写入，勿直接覆盖） */
+  visual_prompt: string;
+  /**
+   * 可选：前端根据分拣站编辑计算后的「视觉摘要」全文（= visual_prompt + 用户纠偏句），
+   * 仅用于展示或调试；实际生图请使用 `computeSyncedVisualPrompt()` 动态合并。
+   */
+  visual_summary?: string;
+  schemes: {
+    social: PosterScheme;
+    offline: PosterScheme;
+  };
+}
+
 // ---------- 营销文案 ----------
 export interface CopySet {
   id: string;
@@ -83,6 +131,11 @@ export interface PosterState {
   // Step 1: 上传
   originalImage: string | null;
   originalImageFile: File | null;
+
+  /** 编辑流水线中间态（StepEditor / StepExport） */
+  processedImage: string | null;
+  removedBgImage: string | null;
+  enhancedImage: string | null;
 
   // Step 2: 识别结果
   dishInfo: DishInfo | null;
@@ -136,10 +189,21 @@ export interface GeneratePosterRequest {
   styleId: StyleId;
 }
 
+/** generate-poster 成功时的 data 载荷（双场景文案 + 底图） */
+export interface GeneratePosterApiData {
+  posterImageBase64: string;
+  posterData: PosterData;
+  dishInfo: DishInfo;
+  textColor?: string;
+  styleLabel?: string;
+  usedFallback?: boolean;
+}
+
+/** @deprecated 旧版三选一文案；新流程请使用 GeneratePosterApiData.posterData */
 export interface GeneratePosterResponse {
-  posterImageBase64: string;   // AI 生成的完整海报底图
-  dishInfo: DishInfo;          // 识别出的菜品信息
-  copySets: GeneratedCopyV2[]; // 3 套营销文案
+  posterImageBase64: string;
+  dishInfo: DishInfo;
+  copySets: GeneratedCopyV2[];
 }
 
 export interface GeneratedCopyV2 {
